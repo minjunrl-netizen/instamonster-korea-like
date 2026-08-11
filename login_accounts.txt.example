@@ -1,0 +1,11 @@
+# 로그인 테스트용 계정 목록
+# 이 파일을 login_accounts.txt 로 복사해서 실제 계정을 넣어라.
+# login_accounts.txt 는 .gitignore로 커밋에서 제외된다.
+#
+# 형식 (한 줄에 하나씩, 구분자는 : , 탭 | 공백 아무거나):
+#   아이디:비번
+#   아이디:비번:2FA시드
+#   아이디:비번:2FA시드:백업코드1 백업코드2
+
+# acc0001:password1
+# acc0002:password2:JBSWY3DPEHPK3PXP

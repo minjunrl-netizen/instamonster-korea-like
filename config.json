@@ -1,0 +1,105 @@
+{
+  "xproxy": {
+    "host": "192.168.0.100",
+    "api_port": 8080,
+    "proxy_type": "socks5",
+    "api_pattern": null,
+    "slots": [
+      {"port": 30001, "name": "유심01-SKT", "modem": 1},
+      {"port": 30002, "name": "유심02-KT", "modem": 2},
+      {"port": 30003, "name": "유심03-LGU", "modem": 3},
+      {"port": 30004, "name": "유심04-SKT", "modem": 4},
+      {"port": 30005, "name": "유심05-KT", "modem": 5},
+      {"port": 30006, "name": "유심06-LGU", "modem": 6},
+      {"port": 30007, "name": "유심07-SKT", "modem": 7},
+      {"port": 30008, "name": "유심08-KT", "modem": 8},
+      {"port": 30009, "name": "유심09-LGU", "modem": 9},
+      {"port": 30010, "name": "유심10-SKT", "modem": 10}
+    ]
+  },
+  "accounts": [
+    {
+      "username": "acc1",
+      "password": "pw1",
+      "session_file": "sessions/acc1.json",
+      "proxy_slot": 0,
+      "content": {
+        "image_dir": "content/acc1/images",
+        "captions_file": "content/acc1/captions.txt",
+        "bio": "일상을 기록합니다 📸",
+        "full_name": "김민수",
+        "profile_pic": "content/acc1/profile.jpg"
+      }
+    },
+    {
+      "username": "acc2",
+      "password": "pw2",
+      "session_file": "sessions/acc2.json",
+      "proxy_slot": 1,
+      "content": {
+        "image_dir": "content/acc2/images",
+        "captions_file": "content/acc2/captions.txt",
+        "bio": "맛집 탐방 🍽️ 서울",
+        "full_name": "이서연",
+        "profile_pic": "content/acc2/profile.jpg"
+      }
+    },
+    {
+      "username": "acc3",
+      "password": "pw3",
+      "session_file": "sessions/acc3.json",
+      "proxy_slot": 2,
+      "content": {
+        "image_dir": "content/acc3/images",
+        "captions_file": "content/acc3/captions.txt",
+        "bio": "여행 좋아하는 직장인 ✈️",
+        "full_name": "박준혁",
+        "profile_pic": "content/acc3/profile.jpg"
+      }
+    },
+    {
+      "username": "acc4",
+      "password": "pw4",
+      "session_file": "sessions/acc4.json",
+      "proxy_slot": 3,
+      "content": {
+        "image_dir": "content/acc4/images",
+        "captions_file": "content/acc4/captions.txt",
+        "bio": "운동 | 건강한 삶 💪",
+        "full_name": "최유진",
+        "profile_pic": "content/acc4/profile.jpg"
+      }
+    },
+    {
+      "username": "acc5",
+      "password": "pw5",
+      "session_file": "sessions/acc5.json",
+      "proxy_slot": 4,
+      "content": {
+        "image_dir": "content/acc5/images",
+        "captions_file": "content/acc5/captions.txt",
+        "bio": "카페 투어 ☕ 부산",
+        "full_name": "정하은",
+        "profile_pic": "content/acc5/profile.jpg"
+      }
+    }
+  ],
+  "target": {
+    "username": "target_username",
+    "post_count": 10,
+    "likes_per_post": 100
+  },
+  "settings": {
+    "sessions_dir": "sessions",
+    "likes_per_account": 10,
+    "max_likes_per_post": 3000,
+    "delay_between_likes_min": 3,
+    "delay_between_likes_max": 10,
+    "delay_between_accounts_min": 1,
+    "delay_between_accounts_max": 5,
+    "ip_rotate_wait_seconds": 12,
+    "human_simulation": true,
+    "view_media_probability": 0.25,
+    "random_action_probability": 0.2
+  }
+}

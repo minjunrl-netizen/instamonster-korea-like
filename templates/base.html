@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}인스타몬스터{% endblock %}</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<nav class="nav">
+  <div class="brand">인스타몬스터</div>
+  <a href="/" class="{{ 'on' if active == 'dash' }}">대시보드</a>
+  <a href="/accounts" class="{{ 'on' if active == 'acc' }}">계정</a>
+  <a href="/diagnosis" class="{{ 'on' if active == 'diag' }}">진단</a>
+  <a href="/login" class="{{ 'on' if active == 'login' }}">대량 로그인</a>
+  <div class="spacer"></div>
+  <div class="badge" id="navStats">
+    준비 <b>{{ stats.ready if stats else 0 }}</b> / 전체 <b>{{ stats.total if stats else 0 }}</b>
+  </div>
+</nav>
+
+<main class="wrap">
+{% block body %}{% endblock %}
+</main>
+
+<script src="/static/app.js"></script>
+{% block script %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,41 @@
+# ─── 민감정보 (절대 커밋 금지) ───
+# 실제 계정 아이디/비번
+login_accounts.txt
+# 로그인 테스트 결과 (실제 IP/계정)
+login_test_results.json
+# 인스타 세션 쿠키 (계정 접근권)
+sessions/
+# SQLite DB (계정/비번/시드 전부)
+*.db
+*.db-wal
+*.db-shm
+instamonster.db*
+
+# ─── 계정별 콘텐츠 ───
+content/*/images/
+content/*/*.txt
+content/*/*.jpg
+content/*/*.png
+warmup_state/*.json
+
+# ─── 파이썬 ───
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# ─── OS/에디터 ───
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# ─── 런타임 ───
+.gjc/
+order_results.csv
+target_results.csv
+orders.csv

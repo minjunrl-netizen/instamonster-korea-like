@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% set active = 'dash' %}
+{% block title %}대시보드 · 인스타몬스터{% endblock %}
+
+{% block body %}
+<h1>대시보드</h1>
+
+<section class="grid4">
+  <div class="card stat">
+    <div class="label">전체 계정</div>
+    <div class="value">{{ "{:,}".format(stats.total) }}</div>
+  </div>
+  <div class="card stat ok">
+    <div class="label">실전 투입 가능</div>
+    <div class="value">{{ "{:,}".format(stats.ready) }}</div>
+  </div>
+  <div class="card stat warn">
+    <div class="label">챌린지 / 2FA 미해결</div>
+    <div class="value">
+      {{ "{:,}".format((stats.by_status.get('challenge', 0)) + (stats.by_status.get('2fa', 0))) }}
+    </div>
+    <div class="dim small">
+      2FA 시드 보유 {{ "{:,}".format(stats.get('totp_seeds', 0)) }}건
+      {%- if stats.get('backup_sets') %} · 백업코드 {{ stats.backup_sets }}건{% endif %}
+    </div>
+  </div>
+  <div class="card stat">
+    <div class="label">오늘 좋아요</div>
+    <div class="value">{{ "{:,}".format(stats.likes_today) }}</div>
+  </div>
+</section>
+
+<section class="grid2">
+  <div class="card">
+    <h2>계정 상태 분포</h2>
+    {% set labels = {'new':'미로그인','ready':'준비완료','challenge':'인증 챌린지','2fa':'2단계 인증','bad_pw':'비번 오류','banned':'밴','failed':'실패'} %}
+    {% if stats.total %}
+    <table class="tbl">
+      <tbody>
+      {% for key, label in labels.items() %}
+        {% set n = stats.by_status.get(key, 0) %}
+        {% if n %}
+        <tr>
+          <td><span class="chip {{ key }}">{{ label }}</span></td>
+          <td class="num">{{ "{:,}".format(n) }}</td>
+          <td class="bar-cell">
+            <div class="bar"><i class="{{ key }}" style="width: {{ (n / stats.total * 100)|round(1) }}%"></i></div>
+          </td>
+          <td class="num dim">{{ (n / stats.total * 100)|round(1) }}%</td>
+        </tr>
+        {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">등록된 계정이 없다. <a href="/login">대량 로그인</a>에서 계정을 등록해라.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>유심 슬롯 <span class="dim">({{ slots|length }}개)</span></h2>
+    <button class="btn sm" onclick="checkProxy()">연결 상태 확인</button>
+    <div id="proxyResult" class="proxy-result"></div>
+    <table class="tbl compact">
+      <thead><tr><th>슬롯</th><th>포트</th><th class="num">배정 계정</th></tr></thead>
+      <tbody>
+      {% for s in slots %}
+        <tr>
+          <td>{{ s.name }}</td>
+          <td class="dim">{{ s.port }}</td>
+          <td class="num">{{ "{:,}".format(stats.per_slot.get(loop.index0, 0)) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>최근 작업</h2>
+  {% if jobs %}
+  <table class="tbl">
+    <thead><tr><th>#</th><th>종류</th><th>상태</th><th class="num">진행</th><th class="num">성공</th><th>시작</th><th>결과</th></tr></thead>
+    <tbody>
+    {% for j in jobs %}
+      <tr>
+        <td><a href="/job/{{ j.id }}">{{ j.id }}</a></td>
+        <td>{{ '대량 로그인' if j.kind == 'bulk_login' else j.kind }}</td>
+        <td><span class="chip job-{{ j.status }}">{{ j.status }}</span></td>
+        <td class="num">{{ j.processed }} / {{ j.total }}</td>
+        <td class="num ok-text">{{ j.succeeded }}</td>
+        <td class="dim">{{ j.started_at }}</td>
+        <td class="dim small">{{ j.message or '' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">아직 실행한 작업이 없다.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>운영 설정</h2>
+  <table class="tbl compact">
+    <tbody>
+      <tr><td>계정당 하루 좋아요</td><td class="num">{{ settings.get('likes_per_account', 10) }}개</td></tr>
+      <tr><td>게시물당 상한</td><td class="num">{{ "{:,}".format(settings.get('max_likes_per_post', 3000)) }}개</td></tr>
+      <tr><td>인간 행동 시뮬레이션</td><td class="num">{{ 'ON' if settings.get('human_simulation') else 'OFF' }}</td></tr>
+      <tr><td>IP 로테이션 대기</td><td class="num">{{ settings.get('ip_rotate_wait_seconds', 12) }}초</td></tr>
+    </tbody>
+  </table>
+  <p class="dim small">config.json에서 수정</p>
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+async function checkProxy() {
+  const box = document.getElementById('proxyResult');
+  box.className = 'proxy-result loading';
+  box.textContent = '슬롯 + IP 누출 확인 중... (최대 20초)';
+  try {
+    const r = await fetch('/api/xproxy/health');
+    const d = await r.json();
+
+    if (d.error) {
+      box.className = 'proxy-result err';
+      box.textContent = '설정 오류: ' + d.error;
+      return;
+    }
+
+    let html = d.safe
+      ? '<div class="verdict ok">✅ 안전 — 로그인 진행 가능</div>'
+      : '<div class="verdict bad">🚨 위험 — 로그인이 차단된다</div>';
+
+    html += `<div class="summary">온라인 <b>${d.online}/${d.total}</b>`;
+    html += ` · 고유 IP <b>${d.unique_ips}</b>`;
+    html += ` · 실제 IP <code>${d.home_ip}</code></div>`;
+
+    if (d.leaking && d.leaking.length)
+      html += `<div class="verdict bad">IP 누출: ${d.leaking.join(', ')} — 프록시 미적용 상태</div>`;
+    if (d.duplicate)
+      html += '<div class="verdict bad">슬롯 간 IP 중복 — 유심/모뎀 매핑 확인</div>';
+
+    html += '<ul class="ip-list">';
+    for (const [name, info] of Object.entries(d.slots)) {
+      const mark = info.status === 'online' ? '✅' : (info.status === 'LEAK' ? '🚨' : '❌');
+      html += `<li>${mark} <b>${name}</b> <code>${info.ip}</code></li>`;
+    }
+    box.innerHTML = html + '</ul>';
+    box.className = 'proxy-result';
+  } catch (e) {
+    box.className = 'proxy-result err';
+    box.textContent = '확인 실패: ' + e;
+  }
+}
+</script>
+{% endblock %}

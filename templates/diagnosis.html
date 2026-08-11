@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% set active = 'diag' %}
+{% block title %}계정 진단 · 인스타몬스터{% endblock %}
+
+{% block body %}
+<h1>계정 건강 진단</h1>
+
+<section class="grid4">
+  <div class="card stat ok"><div class="label">실전 투입 가능</div><div class="value">{{ "{:,}".format(diag.usable) }}</div></div>
+  <div class="card stat"><div class="label">교체 필요</div><div class="value err-text">{{ "{:,}".format(diag.dead_count) }}</div></div>
+  <div class="card stat warn"><div class="label">챌린지 / 2FA</div><div class="value">{{ "{:,}".format(diag.challenge|length + diag.tfa|length) }}</div></div>
+  <div class="card stat"><div class="label">재시도 가능</div><div class="value">{{ "{:,}".format(diag.retryable) }}</div></div>
+</section>
+
+{% set status_labels = {
+  'ready': ('준비완료', '실전 투입 가능', '✅'),
+  'new': ('미로그인', '아직 로그인 시도 안 함', '🔵'),
+  'challenge': ('인증 챌린지', '수동으로 본인 확인 필요', '🔐'),
+  '2fa': ('2단계 인증', 'TOTP 시드 등록하면 자동 해제', '🔑'),
+  'bad_pw': ('비번 오류', '비밀번호 확인 후 재등록', '❌'),
+  'not_exist': ('계정 없음', '인스타에서 삭제/비활성화됨 → 교체 필요', '💀'),
+  'banned': ('밴/스팸', '영구 정지됨 → 교체 필요', '⛔'),
+  'rate_limit': ('레이트리밋', '시간 지나면 자동 재시도됨', '⏳'),
+  'failed': ('일시 실패', '재시도하면 될 수 있음', '⚠️'),
+} %}
+
+<section class="card">
+  <h2>상태별 현황</h2>
+  <table class="tbl">
+    <thead><tr><th></th><th>상태</th><th class="num">개수</th><th>의미</th><th>조치</th></tr></thead>
+    <tbody>
+    {% for key, (label, desc, icon) in status_labels.items() %}
+      {% set n = diag.by_status.get(key, 0) %}
+      {% if n %}
+      <tr>
+        <td>{{ icon }}</td>
+        <td><span class="chip {{ key }}">{{ label }}</span></td>
+        <td class="num"><b>{{ "{:,}".format(n) }}</b></td>
+        <td class="dim small">{{ desc }}</td>
+        <td class="small">
+          {% if key in ('bad_pw', 'not_exist', 'banned') %}
+            <a href="#dead" class="err-text">아래에서 교체 →</a>
+          {% elif key == '2fa' %}
+            <a href="/login">2FA 시드 등록</a>
+          {% elif key == 'challenge' %}
+            수동 해결 필요
+          {% elif key in ('failed', 'rate_limit') %}
+            <a href="/login">재시도</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if diag.dead %}
+<section class="card" id="dead">
+  <h2 class="err-text">🔄 교체 필요한 계정 ({{ diag.dead|length }}건)</h2>
+  <p class="dim small">
+    이 계정들은 삭제/밴/비번오류로 더 이상 쓸 수 없다.
+    새 계정으로 교체하면 유심 슬롯(IP 대역)을 그대로 물려받는다.
+  </p>
+
+  <table class="tbl" id="deadTable">
+    <thead><tr><th>아이디</th><th>상태</th><th>슬롯</th><th>사유</th><th>교체</th></tr></thead>
+    <tbody>
+    {% for a in diag.dead %}
+      <tr id="row-{{ a.username }}">
+        <td><b>{{ a.username }}</b></td>
+        <td><span class="chip {{ a.status }}">{{ status_labels.get(a.status, (a.status,))[0] }}</span></td>
+        <td class="dim">{{ a.proxy_slot }}</td>
+        <td class="dim small">{{ (a.last_error or '')[:60] }}</td>
+        <td>
+          <button class="btn sm" onclick="showReplace('{{ a.username }}')">교체</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="replace-form" id="replaceForm" style="display:none">
+    <h3>계정 교체</h3>
+    <p class="dim small">
+      <span id="replaceTarget" class="err-text"></span> →
+      새 계정으로 교체 (유심 슬롯 유지)
+    </p>
+    <input type="hidden" id="replaceOld">
+    <div class="row">
+      <input type="text" id="replaceUser" placeholder="새 아이디" style="width:200px">
+      <input type="text" id="replacePass" placeholder="비밀번호" style="width:200px">
+      <input type="text" id="replaceSeed" placeholder="2FA 시드 (선택)" style="width:220px">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button class="btn primary" onclick="doReplace()">교체 실행</button>
+      <button class="btn" onclick="hideReplace()">취소</button>
+      <div id="replaceResult" class="result" style="margin:0 0 0 12px"></div>
+    </div>
+  </div>
+
+  <div style="margin-top:16px">
+    <h3>일괄 교체</h3>
+    <p class="dim small">
+      한 줄에 하나씩: <code>죽은아이디:새아이디:새비번</code> 또는 <code>죽은아이디:새아이디:새비번:2FA시드</code>
+    </p>
+    <textarea id="bulkReplaceText" rows="5" spellcheck="false"
+      placeholder="mukwbqbgdiik:new_acc001:newpw123&#10;irbtofg16oeb:new_acc002:newpw456:JBSWY3DPEHPK3PXP"></textarea>
+    <div class="row">
+      <button class="btn primary" onclick="doBulkReplace()">일괄 교체</button>
+      <div id="bulkResult" class="result"></div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% if diag.challenge %}
+<section class="card">
+  <h2>🔐 인증 챌린지 ({{ diag.challenge|length }}건)</h2>
+  <p class="dim small">새 디바이스/IP에서 접속해서 본인 확인을 요구한다. 인스타그램 앱에서 직접 로그인하여 해결한 뒤 재시도.</p>
+  <table class="tbl compact">
+    <thead><tr><th>아이디</th><th>상세</th></tr></thead>
+    <tbody>
+    {% for a in diag.challenge %}
+      <tr>
+        <td><b>{{ a.username }}</b></td>
+        <td class="dim small">{{ (a.last_error or '')[:80] }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if diag.tfa %}
+<section class="card">
+  <h2>🔑 2단계 인증 미해결 ({{ diag.tfa|length }}건)</h2>
+  <p class="dim small">
+    TOTP 시드를 등록하면 다음 로그인 때 자동으로 통과한다.
+    <a href="/login">대량 로그인</a> 페이지에서 <code>아이디:비번:시드</code> 형식으로 재등록하거나,
+    <a href="/accounts?status=2fa">계정 관리</a>에서 개별 등록.
+  </p>
+  <table class="tbl compact">
+    <thead><tr><th>아이디</th><th>시드</th><th>백업코드</th></tr></thead>
+    <tbody>
+    {% for a in diag.tfa %}
+      <tr>
+        <td><b>{{ a.username }}</b></td>
+        <td>{{ '✅ 있음' if a.has_seed else '❌ 없음' }}</td>
+        <td class="dim">{{ a.backup_codes or '-' }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% endblock %}
+
+{% block script %}
+<script>
+function showReplace(username) {
+  document.getElementById('replaceForm').style.display = '';
+  document.getElementById('replaceOld').value = username;
+  document.getElementById('replaceTarget').textContent = username;
+  document.getElementById('replaceUser').value = '';
+  document.getElementById('replacePass').value = '';
+  document.getElementById('replaceSeed').value = '';
+  document.getElementById('replaceResult').textContent = '';
+  document.getElementById('replaceUser').focus();
+}
+
+function hideReplace() {
+  document.getElementById('replaceForm').style.display = 'none';
+}
+
+async function doReplace() {
+  const fd = new FormData();
+  fd.append('old', document.getElementById('replaceOld').value);
+  fd.append('username', document.getElementById('replaceUser').value);
+  fd.append('password', document.getElementById('replacePass').value);
+  fd.append('totp_seed', document.getElementById('replaceSeed').value);
+
+  const box = document.getElementById('replaceResult');
+  box.className = 'result loading'; box.textContent = '교체 중...';
+  try {
+    const r = await fetch('/api/accounts/replace', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '교체 실패');
+    box.className = 'result ok';
+    box.textContent = `${d.replaced} → ${d.new} 교체 완료`;
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    box.className = 'result err'; box.textContent = e.message;
+  }
+}
+
+async function doBulkReplace() {
+  const text = document.getElementById('bulkReplaceText').value.trim();
+  if (!text) return;
+  const box = document.getElementById('bulkResult');
+  box.className = 'result loading'; box.textContent = '교체 중...';
+
+  let ok = 0, fail = 0;
+  for (const line of text.split('\n')) {
+    const parts = line.trim().split(':').map(s => s.trim());
+    if (parts.length < 3) { fail++; continue; }
+    const fd = new FormData();
+    fd.append('old', parts[0]);
+    fd.append('username', parts[1]);
+    fd.append('password', parts[2]);
+    if (parts[3]) fd.append('totp_seed', parts[3]);
+    if (parts[4]) fd.append('backup_codes', parts[4]);
+    try {
+      const r = await fetch('/api/accounts/replace', { method: 'POST', body: fd });
+      if (r.ok) ok++; else fail++;
+    } catch (e) { fail++; }
+  }
+  box.className = ok ? 'result ok' : 'result err';
+  box.textContent = `교체 ${ok}건 성공 / ${fail}건 실패`;
+  if (ok) setTimeout(() => location.reload(), 1200);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% set active = 'acc' %}
+{% block title %}계정 · 인스타몬스터{% endblock %}
+
+{% block body %}
+<h1>계정 관리 <span class="dim">{{ "{:,}".format(total) }}건</span></h1>
+
+<section class="card">
+  <form class="filters" method="get">
+    <select name="status" onchange="this.form.submit()">
+      <option value="">전체 상태</option>
+      {% set labels = {'new':'미로그인','ready':'준비완료','challenge':'인증 챌린지','2fa':'2단계 인증','bad_pw':'비번 오류','banned':'밴','failed':'실패'} %}
+      {% for key, label in labels.items() %}
+      <option value="{{ key }}" {{ 'selected' if status == key }}>
+        {{ label }} ({{ stats.by_status.get(key, 0) }})
+      </option>
+      {% endfor %}
+    </select>
+    <input type="search" name="q" value="{{ q }}" placeholder="아이디 검색">
+    <button class="btn">검색</button>
+    <div class="spacer"></div>
+    <a class="btn sm" href="/api/accounts/export?status={{ status }}">CSV 내보내기</a>
+  </form>
+</section>
+
+<section class="card">
+  <div class="bulk-actions">
+    <label><input type="checkbox" id="checkAll"> 전체 선택</label>
+    <span id="selCount" class="dim small">0개 선택</span>
+    <div class="spacer"></div>
+    <button class="btn sm" onclick="bulkAction('reset')">재시도 대상으로 되돌리기</button>
+    <button class="btn sm danger" onclick="bulkAction('delete')">삭제</button>
+  </div>
+
+  {% if accounts %}
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th style="width:28px"></th>
+        <th>아이디</th><th>상태</th><th>슬롯</th><th>2FA</th>
+        <th class="num">오늘</th><th class="num">누적</th>
+        <th>마지막 로그인</th><th>메모</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for a in accounts %}
+      <tr>
+        <td><input type="checkbox" class="sel" value="{{ a.username }}"></td>
+        <td><b>{{ a.username }}</b></td>
+        <td><span class="chip {{ a.status }}">{{ labels.get(a.status, a.status) }}</span></td>
+        <td class="dim">{{ a.proxy_slot }}</td>
+        <td class="tfa-cell" id="tfa-{{ a.username }}">
+          {% if a.totp_seed %}
+            <button class="chip tfa-ok" onclick="showCode('{{ a.username }}')"
+                    title="현재 코드 보기">TOTP</button>
+          {% elif a.backup_codes %}
+            <button class="chip tfa-bk" onclick="setSeed('{{ a.username }}')"
+                    title="백업코드 {{ a.backup_codes.split(',')|length }}개 남음">
+              백업 {{ a.backup_codes.split(',')|length }}
+            </button>
+          {% else %}
+            <button class="chip tfa-none" onclick="setSeed('{{ a.username }}')"
+                    title="2FA 시드 등록">없음</button>
+          {% endif %}
+        </td>
+        <td class="num">{{ a.likes_today }}</td>
+        <td class="num dim">{{ a.likes_total }}</td>
+        <td class="dim small">{{ a.last_login or '-' }}</td>
+        <td class="dim small err-text">{{ (a.last_error or '')[:52] }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {% if pages > 1 %}
+  <div class="pager">
+    {% if page > 1 %}<a href="?status={{ status }}&q={{ q }}&page={{ page - 1 }}">‹ 이전</a>{% endif %}
+    <span>{{ page }} / {{ pages }}</span>
+    {% if page < pages %}<a href="?status={{ status }}&q={{ q }}&page={{ page + 1 }}">다음 ›</a>{% endif %}
+  </div>
+  {% endif %}
+  {% else %}
+  <p class="empty">계정이 없다. <a href="/login">대량 로그인</a>에서 등록해라.</p>
+  {% endif %}
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+const checkAll = document.getElementById('checkAll');
+const boxes = () => [...document.querySelectorAll('.sel')];
+
+function updateCount() {
+  const n = boxes().filter(b => b.checked).length;
+  document.getElementById('selCount').textContent = n + '개 선택';
+}
+
+checkAll.addEventListener('change', () => {
+  boxes().forEach(b => b.checked = checkAll.checked);
+  updateCount();
+});
+boxes().forEach(b => b.addEventListener('change', updateCount));
+
+async function bulkAction(kind) {
+  const names = boxes().filter(b => b.checked).map(b => b.value);
+  if (!names.length) return alert('선택된 계정이 없다');
+
+  const label = kind === 'delete' ? '삭제' : '재시도 대상으로 변경';
+  if (!confirm(`${names.length}개 계정을 ${label}할까?`)) return;
+
+  const fd = new FormData();
+  fd.append('usernames', names.join(','));
+  const r = await fetch('/api/accounts/' + kind, { method: 'POST', body: fd });
+  if (r.ok) location.reload();
+  else alert('실패');
+}
+
+// 저장된 시드로 현재 코드를 뽑아 인증앱 화면과 대조한다
+async function showCode(username) {
+  const cell = document.getElementById('tfa-' + username);
+  try {
+    const r = await fetch('/api/accounts/totp/preview?username=' + encodeURIComponent(username));
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '조회 실패');
+
+    const prev = cell.innerHTML;
+    cell.innerHTML = `<span class="chip tfa-code" title="${d.expires_in}초 후 변경">${d.code}</span>`;
+    setTimeout(() => { cell.innerHTML = prev; }, (d.expires_in + 1) * 1000);
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+async function setSeed(username) {
+  const seed = prompt(
+    `${username} 의 2FA 시드를 입력해라.\n인증앱 등록 화면의 base32 문자열 (공백 있어도 됨).`
+  );
+  if (!seed) return;
+
+  const fd = new FormData();
+  fd.append('username', username);
+  fd.append('seed', seed);
+  const r = await fetch('/api/accounts/totp', { method: 'POST', body: fd });
+  const d = await r.json();
+
+  if (!r.ok) return alert(d.detail || '등록 실패');
+  alert(`등록 완료.\n현재 코드: ${d.code}\n인증앱 숫자와 같은지 확인해라.`);
+  location.reload();
+}
+</script>
+{% endblock %}

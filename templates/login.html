@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% set active = 'login' %}
+{% block title %}대량 로그인 · 인스타몬스터{% endblock %}
+
+{% block body %}
+<h1>대량 로그인</h1>
+
+{% if running %}
+<div class="alert running">
+  실행 중인 작업이 있다 — <a href="/job/{{ running.id }}">작업 #{{ running.id }} 보기</a>
+</div>
+{% endif %}
+
+<section class="grid2">
+  <div class="card">
+    <h2>1. 계정 등록</h2>
+    <p class="dim small">
+      한 줄에 하나씩. 구분자는 <code>:</code> <code>,</code> <code>탭</code> <code>|</code> <code>공백</code> 아무거나.
+    </p>
+    <table class="tbl compact fmt">
+      <tbody>
+        <tr><td><code>아이디:비번</code></td><td class="dim">2FA 없는 계정</td></tr>
+        <tr><td><code>아이디:비번:2FA시드</code></td><td class="dim">코드 자동 생성 (권장)</td></tr>
+        <tr><td><code>아이디:비번:시드:백업코드…</code></td><td class="dim">백업코드까지 함께</td></tr>
+      </tbody>
+    </table>
+    <form id="importForm">
+      <textarea name="text" id="accText" rows="9" spellcheck="false"
+        placeholder="acc0001:password1&#10;acc0002:password2:JBSWY3DPEHPK3PXP&#10;acc0003:password3:JBSW Y3DP EHPK 3PXP:11223344 55667788"></textarea>
+      <div class="row">
+        <label class="file-btn">
+          CSV/TXT 파일
+          <input type="file" name="file" id="accFile" accept=".csv,.txt" hidden>
+        </label>
+        <span id="fileName" class="dim small"></span>
+        <div class="spacer"></div>
+        <button type="submit" class="btn primary">계정 등록</button>
+      </div>
+    </form>
+    <div id="importResult" class="result"></div>
+    <p class="dim small">
+      등록 시 유심 슬롯 <b>{{ slot_count }}개</b>에 자동 분배되고, 계정마다 슬롯이 고정된다.<br>
+      <b>2FA 시드</b>는 인증앱 등록 화면에 나오는 base32 문자열이다 (공백 있어도 됨).
+      저장해두면 로그인 중 코드를 자체 생성해 자동으로 통과한다.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>2. 로그인 실행</h2>
+    <table class="tbl compact">
+      <tbody>
+        <tr><td>미로그인 (new)</td><td class="num">{{ "{:,}".format(stats.by_status.get('new', 0)) }}</td></tr>
+        <tr><td>실패 (failed)</td><td class="num">{{ "{:,}".format(stats.by_status.get('failed', 0)) }}</td></tr>
+        <tr><td>챌린지</td><td class="num">{{ "{:,}".format(stats.by_status.get('challenge', 0)) }}</td></tr>
+        <tr class="hl"><td>준비완료 (ready)</td><td class="num ok-text">{{ "{:,}".format(stats.ready) }}</td></tr>
+      </tbody>
+    </table>
+
+    <form id="startForm">
+      <label class="field">
+        대상
+        <select name="scope">
+          <option value="retryable">미로그인 + 실패 (권장)</option>
+          <option value="new">미로그인만</option>
+          <option value="failed">실패만 재시도</option>
+          <option value="challenge">챌린지 재시도</option>
+          <option value="all">전체 재로그인</option>
+        </select>
+      </label>
+      <label class="field">
+        최대 개수 <span class="dim small">(0 = 전체)</span>
+        <input type="number" name="limit" value="0" min="0" step="50">
+      </label>
+      <button type="submit" class="btn primary lg" {% if running %}disabled{% endif %}>
+        로그인 시작
+      </button>
+    </form>
+    <div id="startResult" class="result"></div>
+
+    <div class="warn-box">
+      <b>⚠️ 실행 전 확인</b>
+      <ul>
+        <li>xProxy 장비가 연결되어 있어야 한다 (<a href="/">대시보드</a>에서 확인)</li>
+        <li>계정당 로그인 간격 20~45초 + IP 로테이션 12초</li>
+        <li>유심 {{ slot_count }}개 병렬 → 시간당 약 {{ slot_count * 80 }}개 처리</li>
+        <li>4,000개 로그인 시 약 {{ (4000 / (slot_count * 80)) | round(1) }}시간 소요</li>
+      </ul>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+document.getElementById('accFile').addEventListener('change', e => {
+  document.getElementById('fileName').textContent = e.target.files[0]?.name || '';
+});
+
+document.getElementById('importForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const box = document.getElementById('importResult');
+  const fd = new FormData();
+  fd.append('text', document.getElementById('accText').value);
+  const f = document.getElementById('accFile').files[0];
+  if (f) fd.append('file', f);
+
+  box.className = 'result loading';
+  box.textContent = '등록 중...';
+  try {
+    const r = await fetch('/api/accounts/import', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '등록 실패');
+    box.className = 'result ok';
+    let msg = `인식 <b>${d.parsed}</b>건 → 신규 <b>${d.added}</b> / 갱신 <b>${d.updated}</b>`;
+    if (d.with_2fa) msg += ` · 2FA 시드 <b>${d.with_2fa}</b>건`;
+    if (d.bad_seed) msg += ` · <span class="err-text">시드 형식 오류 ${d.bad_seed}건</span>`;
+    box.innerHTML = msg;
+    setTimeout(() => location.reload(), 1200);
+  } catch (err) {
+    box.className = 'result err';
+    box.textContent = err.message;
+  }
+});
+
+document.getElementById('startForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const box = document.getElementById('startResult');
+  const fd = new FormData(e.target);
+  box.className = 'result loading';
+  box.textContent = '시작 중...';
+  try {
+    const r = await fetch('/api/login/start', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '시작 실패');
+    location.href = '/job/' + d.job_id;
+  } catch (err) {
+    box.className = 'result err';
+    box.textContent = err.message;
+  }
+});
+</script>
+{% endblock %}

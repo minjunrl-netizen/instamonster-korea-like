@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% set active = 'login' %}
+{% block title %}작업 #{{ job.id }} · 인스타몬스터{% endblock %}
+
+{% block body %}
+<h1>작업 #{{ job.id }} <span class="dim">{{ '대량 로그인' if job.kind == 'bulk_login' else job.kind }}</span></h1>
+
+<section class="card">
+  <div class="job-head">
+    <span class="chip job-{{ job.status }}" id="jobStatus">{{ job.status }}</span>
+    <div class="spacer"></div>
+    <button class="btn danger" id="stopBtn" {% if job.status != 'running' %}style="display:none"{% endif %}>
+      중단
+    </button>
+  </div>
+
+  <div class="progress"><i id="bar" style="width:0%"></i></div>
+  <div class="job-nums">
+    <span>진행 <b id="processed">{{ job.processed }}</b> / <b id="total">{{ job.total }}</b></span>
+    <span class="ok-text">성공 <b id="succeeded">{{ job.succeeded }}</b></span>
+    <span class="err-text">실패 <b id="failed">{{ job.failed }}</b></span>
+    <span class="dim" id="eta"></span>
+  </div>
+  {% if job.message %}<p class="dim" id="msg">{{ job.message }}</p>{% else %}<p class="dim" id="msg"></p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>실시간 로그</h2>
+  <div id="log" class="log"></div>
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+const JOB_ID = {{ job.id }};
+let after = 0;
+let startedAt = Date.now();
+let firstProcessed = {{ job.processed }};
+
+const logBox = document.getElementById('log');
+
+function addLines(events) {
+  if (!events.length) return;
+  const atBottom = logBox.scrollTop + logBox.clientHeight >= logBox.scrollHeight - 40;
+  for (const e of events) {
+    const div = document.createElement('div');
+    div.className = 'line ' + e.level;
+    div.innerHTML = `<span class="ts">${e.ts.slice(11)}</span> ${escapeHtml(e.message)}`;
+    logBox.appendChild(div);
+    after = Math.max(after, e.id);
+  }
+  while (logBox.childNodes.length > 800) logBox.removeChild(logBox.firstChild);
+  if (atBottom) logBox.scrollTop = logBox.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+async function poll() {
+  try {
+    const r = await fetch(`/api/job/${JOB_ID}?after=${after}`);
+    const d = await r.json();
+    const j = d.job;
+
+    document.getElementById('processed').textContent = j.processed.toLocaleString();
+    document.getElementById('total').textContent = j.total.toLocaleString();
+    document.getElementById('succeeded').textContent = j.succeeded.toLocaleString();
+    document.getElementById('failed').textContent = j.failed.toLocaleString();
+    document.getElementById('jobStatus').textContent = j.status;
+    document.getElementById('jobStatus').className = 'chip job-' + j.status;
+    if (j.message) document.getElementById('msg').textContent = j.message;
+
+    const pct = j.total ? (j.processed / j.total * 100) : 0;
+    document.getElementById('bar').style.width = pct.toFixed(1) + '%';
+
+    const doneNow = j.processed - firstProcessed;
+    if (doneNow > 0 && j.status === 'running') {
+      const rate = doneNow / ((Date.now() - startedAt) / 1000);
+      const left = (j.total - j.processed) / rate;
+      document.getElementById('eta').textContent =
+        `· ${(rate * 3600).toFixed(0)}개/시간 · 남은 시간 약 ${fmt(left)}`;
+    }
+
+    addLines(d.events);
+
+    const navStats = document.getElementById('navStats');
+    if (navStats && d.stats) {
+      navStats.innerHTML = `준비 <b>${d.stats.ready.toLocaleString()}</b> / 전체 <b>${d.stats.total.toLocaleString()}</b>`;
+    }
+
+    if (j.status !== 'running') {
+      document.getElementById('stopBtn').style.display = 'none';
+      document.getElementById('eta').textContent = '';
+      return;
+    }
+  } catch (e) { /* 잠시 후 재시도 */ }
+  setTimeout(poll, 1500);
+}
+
+function fmt(sec) {
+  if (!isFinite(sec) || sec < 0) return '-';
+  const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+  return h ? `${h}시간 ${m}분` : `${m}분`;
+}
+
+document.getElementById('stopBtn').addEventListener('click', async () => {
+  if (!confirm('작업을 중단할까? 진행 중인 계정까지만 처리하고 멈춘다.')) return;
+  await fetch('/api/login/stop', { method: 'POST' });
+});
+
+poll();
+</script>
+{% endblock %}

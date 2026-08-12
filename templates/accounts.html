@@ -9,7 +9,7 @@
   <form class="filters" method="get">
     <select name="status" onchange="this.form.submit()">
       <option value="">전체 상태</option>
-      {% set labels = {'new':'미로그인','ready':'준비완료','challenge':'인증 챌린지','2fa':'2단계 인증','bad_pw':'비번 오류','banned':'밴','failed':'실패'} %}
+      {% set labels = {'new':'미로그인','ready':'준비완료','challenge':'계정 오류','2fa':'2단계 인증','bad_pw':'비번 오류','banned':'밴','failed':'실패'} %}
       {% for key, label in labels.items() %}
       <option value="{{ key }}" {{ 'selected' if status == key }}>
         {{ label }} ({{ stats.by_status.get(key, 0) }})

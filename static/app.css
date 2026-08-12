@@ -49,6 +49,46 @@ code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-siz
 }
 .nav .signout:hover { color: var(--err); border-color: rgba(242,86,77,.35); text-decoration: none; }
 
+/* ─── 탭 ─── */
+.tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.tabs .tab {
+  background: none; border: none; color: var(--dim);
+  padding: 8px 14px; font: inherit; font-weight: 500; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tabs .tab:hover { color: var(--text); }
+.tabs .tab.on { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ─── 엑셀식 계정 표 ─── */
+.grid-wrap { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.acc-grid { width: 100%; border-collapse: collapse; font-size: 13px; }
+.acc-grid thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--panel2); color: var(--dim); font-weight: 600;
+  text-align: left; padding: 8px 10px; font-size: 11px;
+  border-bottom: 1px solid var(--line); white-space: nowrap;
+}
+.acc-grid th .req { color: var(--err); font-size: 10px; }
+.acc-grid th .opt { color: var(--dim); font-size: 10px; font-weight: 400; }
+.acc-grid th.rownum, .acc-grid td.rownum {
+  width: 34px; text-align: center; color: var(--dim); font-size: 11px;
+  background: var(--panel2);
+}
+.acc-grid th.del, .acc-grid td.del { width: 34px; text-align: center; }
+.acc-grid td { border-bottom: 1px solid var(--line); padding: 0; }
+.acc-grid input {
+  width: 100%; height: 34px; border: none; background: transparent;
+  color: var(--text); padding: 0 10px; font: inherit; font-size: 13px;
+  border-radius: 0; outline: none;
+}
+.acc-grid input:focus { background: rgba(79,140,255,.08); box-shadow: inset 0 0 0 1px var(--accent); }
+.acc-grid tr:hover td { background: rgba(255,255,255,.02); }
+.acc-grid .rowdel {
+  background: none; border: none; color: var(--dim);
+  cursor: pointer; font-size: 16px; line-height: 1; padding: 4px 8px;
+}
+.acc-grid .rowdel:hover { color: var(--err); }
+
 .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
 h1 { font-size: 22px; margin: 0 0 18px; letter-spacing: -.4px; }
 h2 { font-size: 14px; margin: 0 0 12px; color: var(--dim); font-weight: 600; }

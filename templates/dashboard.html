@@ -15,7 +15,7 @@
     <div class="value">{{ "{:,}".format(stats.ready) }}</div>
   </div>
   <div class="card stat warn">
-    <div class="label">챌린지 / 2FA 미해결</div>
+    <div class="label">계정 오류 / 2FA 미해결</div>
     <div class="value">
       {{ "{:,}".format((stats.by_status.get('challenge', 0)) + (stats.by_status.get('2fa', 0))) }}
     </div>
@@ -33,7 +33,7 @@
 <section class="grid2">
   <div class="card">
     <h2>계정 상태 분포</h2>
-    {% set labels = {'new':'미로그인','ready':'준비완료','challenge':'인증 챌린지','2fa':'2단계 인증','bad_pw':'비번 오류','banned':'밴','failed':'실패'} %}
+    {% set labels = {'new':'미로그인','ready':'준비완료','challenge':'계정 오류','2fa':'2단계 인증','bad_pw':'비번 오류','banned':'밴','failed':'실패'} %}
     {% if stats.total %}
     <table class="tbl">
       <tbody>

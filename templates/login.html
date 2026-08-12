@@ -14,33 +14,67 @@
 <section class="grid2">
   <div class="card">
     <h2>1. 계정 등록</h2>
-    <p class="dim small">
-      한 줄에 하나씩. 구분자는 <code>:</code> <code>,</code> <code>탭</code> <code>|</code> <code>공백</code> 아무거나.
-    </p>
-    <table class="tbl compact fmt">
-      <tbody>
-        <tr><td><code>아이디:비번</code></td><td class="dim">2FA 없는 계정</td></tr>
-        <tr><td><code>아이디:비번:2FA시드</code></td><td class="dim">코드 자동 생성 (권장)</td></tr>
-        <tr><td><code>아이디:비번:시드:백업코드…</code></td><td class="dim">백업코드까지 함께</td></tr>
-      </tbody>
-    </table>
-    <form id="importForm">
-      <textarea name="text" id="accText" rows="9" spellcheck="false"
-        placeholder="acc0001:password1&#10;acc0002:password2:JBSWY3DPEHPK3PXP&#10;acc0003:password3:JBSW Y3DP EHPK 3PXP:11223344 55667788"></textarea>
-      <div class="row">
-        <label class="file-btn">
-          CSV/TXT 파일
-          <input type="file" name="file" id="accFile" accept=".csv,.txt" hidden>
-        </label>
-        <span id="fileName" class="dim small"></span>
-        <div class="spacer"></div>
-        <button type="submit" class="btn primary">계정 등록</button>
+
+    <div class="tabs">
+      <button type="button" class="tab on" data-tab="grid">표 입력 (엑셀)</button>
+      <button type="button" class="tab" data-tab="text">붙여넣기</button>
+    </div>
+
+    <!-- ── 엑셀식 표 입력 ── -->
+    <div class="tabpane" id="pane-grid">
+      <p class="dim small">
+        엑셀에서 <b>아이디 · 비번 · 2FA시드 · 백업코드</b> 열을 복사해 표 아무 칸에 붙여넣으면
+        칸이 자동으로 채워집니다. 직접 입력해도 됩니다.
+      </p>
+      <div class="grid-wrap">
+        <table class="acc-grid" id="accGrid">
+          <thead>
+            <tr>
+              <th class="rownum">#</th>
+              <th>아이디 <span class="req">*</span></th>
+              <th>비밀번호 <span class="req">*</span></th>
+              <th>2FA 시드 <span class="opt">선택</span></th>
+              <th>백업코드 <span class="opt">선택</span></th>
+              <th class="del"></th>
+            </tr>
+          </thead>
+          <tbody id="gridBody"></tbody>
+        </table>
       </div>
-    </form>
+      <div class="row">
+        <button type="button" class="btn sm" id="addRows">행 10개 추가</button>
+        <button type="button" class="btn sm" id="clearGrid">비우기</button>
+        <span id="gridCount" class="dim small"></span>
+        <div class="spacer"></div>
+        <button type="button" class="btn primary" id="gridSubmit">표로 등록</button>
+      </div>
+    </div>
+
+    <!-- ── 텍스트 붙여넣기 ── -->
+    <div class="tabpane" id="pane-text" style="display:none">
+      <p class="dim small">
+        한 줄에 하나씩. 구분자는 <code>:</code> <code>,</code> <code>탭</code> <code>|</code> <code>공백</code> 아무거나.
+        형식: <code>아이디 비번</code> 또는 <code>아이디 비번 2FA시드</code>
+      </p>
+      <form id="importForm">
+        <textarea name="text" id="accText" rows="9" spellcheck="false"
+          placeholder="maxwellwillis52  3hzWaM76pv  I6D6MHBZ3WNITP3CSKKUE2ZYHQPXK2BT&#10;alexamckay26  DTP9nhvpAE  MSA5MFTKJQ67Y6WJLAS6UXFTN5NHH75Y"></textarea>
+        <div class="row">
+          <label class="file-btn">
+            CSV/TXT 파일
+            <input type="file" name="file" id="accFile" accept=".csv,.txt" hidden>
+          </label>
+          <span id="fileName" class="dim small"></span>
+          <div class="spacer"></div>
+          <button type="submit" class="btn primary">계정 등록</button>
+        </div>
+      </form>
+    </div>
+
     <div id="importResult" class="result"></div>
     <p class="dim small">
       등록 시 유심 슬롯 <b>{{ slot_count }}개</b>에 자동 분배되고, 계정마다 슬롯이 고정된다.<br>
-      <b>2FA 시드</b>는 인증앱 등록 화면에 나오는 base32 문자열이다 (공백 있어도 됨).
+      <b>2FA 시드</b>는 인증앱 등록 화면의 base32 문자열 (공백 있어도 됨).
       저장해두면 로그인 중 코드를 자체 생성해 자동으로 통과한다.
     </p>
   </div>
@@ -51,7 +85,7 @@
       <tbody>
         <tr><td>미로그인 (new)</td><td class="num">{{ "{:,}".format(stats.by_status.get('new', 0)) }}</td></tr>
         <tr><td>실패 (failed)</td><td class="num">{{ "{:,}".format(stats.by_status.get('failed', 0)) }}</td></tr>
-        <tr><td>챌린지</td><td class="num">{{ "{:,}".format(stats.by_status.get('challenge', 0)) }}</td></tr>
+        <tr><td>계정 오류 (challenge)</td><td class="num">{{ "{:,}".format(stats.by_status.get('challenge', 0)) }}</td></tr>
         <tr class="hl"><td>준비완료 (ready)</td><td class="num ok-text">{{ "{:,}".format(stats.ready) }}</td></tr>
       </tbody>
     </table>
@@ -63,7 +97,7 @@
           <option value="retryable">미로그인 + 실패 (권장)</option>
           <option value="new">미로그인만</option>
           <option value="failed">실패만 재시도</option>
-          <option value="challenge">챌린지 재시도</option>
+          <option value="challenge">계정 오류 재시도</option>
           <option value="all">전체 재로그인</option>
         </select>
       </label>
@@ -92,6 +126,127 @@
 
 {% block script %}
 <script>
+// ─── 탭 전환 ───
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    const target = t.dataset.tab;
+    document.getElementById('pane-grid').style.display = target === 'grid' ? '' : 'none';
+    document.getElementById('pane-text').style.display = target === 'text' ? '' : 'none';
+  });
+});
+
+// ─── 엑셀식 표 ───
+const COLS = 4;  // 아이디, 비번, 시드, 백업코드
+const gridBody = document.getElementById('gridBody');
+
+function makeRow() {
+  const tr = document.createElement('tr');
+  tr.innerHTML =
+    '<td class="rownum"></td>' +
+    Array.from({length: COLS}).map((_, c) =>
+      `<td><input type="text" spellcheck="false" autocapitalize="off" data-col="${c}"></td>`
+    ).join('') +
+    '<td class="del"><button type="button" class="rowdel" title="행 삭제">×</button></td>';
+  tr.querySelector('.rowdel').addEventListener('click', () => { tr.remove(); renumber(); });
+  tr.querySelectorAll('input').forEach(inp => {
+    inp.addEventListener('paste', onPaste);
+    inp.addEventListener('input', renumber);
+  });
+  return tr;
+}
+
+function addRows(n) {
+  for (let i = 0; i < n; i++) gridBody.appendChild(makeRow());
+  renumber();
+}
+
+function renumber() {
+  let filled = 0;
+  [...gridBody.rows].forEach((tr, i) => {
+    tr.querySelector('.rownum').textContent = i + 1;
+    const id = tr.querySelector('input[data-col="0"]').value.trim();
+    const pw = tr.querySelector('input[data-col="1"]').value.trim();
+    if (id && pw) filled++;
+  });
+  document.getElementById('gridCount').textContent = `입력된 계정 ${filled}개`;
+}
+
+// 엑셀 붙여넣기: 탭/줄바꿈 데이터를 현재 칸 기준으로 자동 분배
+function onPaste(e) {
+  const text = (e.clipboardData || window.clipboardData).getData('text');
+  if (!text.includes('\t') && !text.includes('\n')) return;  // 단일 값이면 기본 동작
+  e.preventDefault();
+
+  const startInput = e.target;
+  const startRow = [...gridBody.rows].indexOf(startInput.closest('tr'));
+  const startCol = parseInt(startInput.dataset.col, 10);
+
+  const rows = text.replace(/\r/g, '').split('\n').filter(l => l.trim() !== '');
+  rows.forEach((line, r) => {
+    // 탭 우선, 없으면 2칸 이상 공백/쉼표로 분리
+    let cells = line.includes('\t') ? line.split('\t') : line.split(/\s{2,}|,|\|/);
+    if (cells.length === 1) cells = line.trim().split(/\s+/);  // 공백 하나로도 분리
+
+    const targetRow = startRow + r;
+    while (gridBody.rows.length <= targetRow) gridBody.appendChild(makeRow());
+    const tr = gridBody.rows[targetRow];
+
+    cells.forEach((val, c) => {
+      const col = startCol + c;
+      if (col >= COLS) return;
+      const inp = tr.querySelector(`input[data-col="${col}"]`);
+      if (inp) inp.value = val.trim();
+    });
+  });
+  renumber();
+}
+
+document.getElementById('addRows').addEventListener('click', () => addRows(10));
+document.getElementById('clearGrid').addEventListener('click', () => {
+  gridBody.innerHTML = ''; addRows(8);
+});
+
+// 표 → 텍스트 변환 후 등록
+document.getElementById('gridSubmit').addEventListener('click', async () => {
+  const box = document.getElementById('importResult');
+  const lines = [];
+  [...gridBody.rows].forEach(tr => {
+    const v = c => tr.querySelector(`input[data-col="${c}"]`).value.trim();
+    const id = v(0), pw = v(1), seed = v(2), backup = v(3);
+    if (!id || !pw) return;
+    let line = `${id}\t${pw}`;
+    if (seed) line += `\t${seed}`;
+    if (backup) line += `\t${backup}`;
+    lines.push(line);
+  });
+  if (!lines.length) {
+    box.className = 'result err';
+    box.textContent = '아이디·비밀번호가 채워진 행이 없습니다.';
+    return;
+  }
+  const fd = new FormData();
+  fd.append('text', lines.join('\n'));
+  box.className = 'result loading';
+  box.textContent = `${lines.length}개 등록 중...`;
+  try {
+    const r = await fetch('/api/accounts/import', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '등록 실패');
+    box.className = 'result ok';
+    let msg = `인식 <b>${d.parsed}</b>건 → 신규 <b>${d.added}</b> / 갱신 <b>${d.updated}</b>`;
+    if (d.with_2fa) msg += ` · 2FA 시드 <b>${d.with_2fa}</b>건`;
+    if (d.bad_seed) msg += ` · <span class="err-text">시드 형식 오류 ${d.bad_seed}건</span>`;
+    box.innerHTML = msg;
+    setTimeout(() => location.reload(), 1400);
+  } catch (err) {
+    box.className = 'result err';
+    box.textContent = err.message;
+  }
+});
+
+addRows(8);  // 초기 8행
 document.getElementById('accFile').addEventListener('change', e => {
   document.getElementById('fileName').textContent = e.target.files[0]?.name || '';
 });

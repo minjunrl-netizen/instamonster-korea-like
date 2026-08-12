@@ -9,7 +9,7 @@
   <form class="filters" method="get">
     <select name="status" onchange="this.form.submit()">
       <option value="">전체 상태</option>
-      {% set labels = {'new':'미로그인','ready':'준비완료','challenge':'계정 오류','2fa':'2단계 인증','bad_pw':'비번 오류','banned':'밴','failed':'실패'} %}
+      {% set labels = {'new':'미로그인','ready':'준비완료','warming':'워밍업중','challenge':'계정 오류','2fa':'2단계 인증','bad_pw':'비번 오류','not_exist':'계정 없음','banned':'밴','rate_limit':'레이트리밋','failed':'실패'} %}
       {% for key, label in labels.items() %}
       <option value="{{ key }}" {{ 'selected' if status == key }}>
         {{ label }} ({{ stats.by_status.get(key, 0) }})
@@ -46,7 +46,7 @@
     {% for a in accounts %}
       <tr>
         <td><input type="checkbox" class="sel" value="{{ a.username }}"></td>
-        <td><b>{{ a.username }}</b></td>
+        <td><a href="/account/{{ a.username }}"><b>{{ a.username }}</b></a></td>
         <td><span class="chip {{ a.status }}">{{ labels.get(a.status, a.status) }}</span></td>
         <td class="dim">{{ a.proxy_slot }}</td>
         <td class="tfa-cell" id="tfa-{{ a.username }}">

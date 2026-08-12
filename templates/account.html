@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% set active = 'acc' %}
+{% block title %}{{ acc.username }} · 인스타몬스터{% endblock %}
+
+{% block body %}
+<h1>@{{ acc.username }}
+  <span class="chip {{ acc.status }}">{{ acc.status }}</span>
+</h1>
+
+<section class="grid2">
+  <!-- ── 계정 정보 / 나이 분석 ── -->
+  <div class="card">
+    <h2>계정 정보 · 나이 분석</h2>
+    <table class="tbl compact">
+      <tbody>
+        <tr><td>상태</td><td><span class="chip {{ acc.status }}">{{ acc.status }}</span></td></tr>
+        <tr><td>유심 슬롯</td><td>{{ acc.proxy_slot }}</td></tr>
+        <tr><td>기종</td><td>{{ acc.device_model or '-' }}</td></tr>
+        <tr><td>2FA 시드</td><td>{{ '있음' if acc.totp_seed else '없음' }}</td></tr>
+        <tr class="hl"><td>나이 등급</td><td id="ageClass">
+          {% if acc.age_class %}
+            <span class="chip age-{{ acc.age_class }}">{{ acc.age_class }}</span>
+          {% else %}미분석{% endif %}
+        </td></tr>
+        <tr><td>팔로워</td><td id="mFollower">{{ acc.follower_count if acc.follower_count is not none else '-' }}</td></tr>
+        <tr><td>팔로잉</td><td id="mFollowing">{{ acc.following_count if acc.following_count is not none else '-' }}</td></tr>
+        <tr><td>게시물</td><td id="mMedia">{{ acc.media_count if acc.media_count is not none else '-' }}</td></tr>
+        <tr><td>워밍업 일차</td><td>{{ acc.warmup_day }}일</td></tr>
+      </tbody>
+    </table>
+    <button class="btn" onclick="analyze()">나이 재분석</button>
+    <div id="analyzeResult" class="result"></div>
+    <p class="dim small">
+      완전 신규(fresh)면 워밍업 필수. 숙성(aged)이면 바로 투입 가능.
+    </p>
+  </div>
+
+  <!-- ── 프로필 변경 ── -->
+  <div class="card">
+    <h2>프로필 변경</h2>
+    <form id="profileForm">
+      <label class="field">이름 (표시 이름)
+        <input type="text" name="full_name" placeholder="{{ acc.full_name or '홍길동' }}">
+      </label>
+      <label class="field">한줄소개
+        <textarea name="biography" rows="2" placeholder="일상을 기록합니다 📸"></textarea>
+      </label>
+      <label class="field">프로필 링크 (선택)
+        <input type="text" name="external_url" placeholder="https://...">
+      </label>
+      <label class="field">
+        인스타 아이디 변경 <span class="err-text small">⚠️ 14일 2회 제한, 신규계정 위험</span>
+        <input type="text" name="new_username" placeholder="새 아이디 (@없이)">
+      </label>
+      <button type="submit" class="btn primary">프로필 저장</button>
+    </form>
+    <div id="profileResult" class="result"></div>
+
+    <div class="row" style="margin-top:14px">
+      <label class="file-btn">프로필 사진 변경
+        <input type="file" id="picFile" accept="image/*" hidden>
+      </label>
+      <span id="picName" class="dim small"></span>
+    </div>
+    <div id="picResult" class="result"></div>
+  </div>
+</section>
+
+<!-- ── 게시물 업로드 ── -->
+<section class="card">
+  <h2>게시물 업로드</h2>
+  <div class="tabs">
+    <button type="button" class="tab on" data-k="photo">사진 1장</button>
+    <button type="button" class="tab" data-k="album">사진 여러장</button>
+    <button type="button" class="tab" data-k="reel">릴스</button>
+    <button type="button" class="tab" data-k="mixed">사진 + 릴스</button>
+  </div>
+
+  <p class="dim small" id="uploadHint">사진 1장을 올립니다.</p>
+
+  <div class="row">
+    <label class="file-btn">파일 선택
+      <input type="file" id="uploadFiles" hidden>
+    </label>
+    <span id="uploadFileNames" class="dim small"></span>
+  </div>
+
+  <label class="field" style="margin-top:12px">문구 (캡션)
+    <textarea id="caption" rows="3" placeholder="게시물 설명, #해시태그"></textarea>
+  </label>
+
+  <button class="btn primary" id="uploadBtn">업로드</button>
+  <div id="uploadResult" class="result"></div>
+
+  <div class="warn-box" style="margin-top:14px">
+    <b>업로드 종류</b>
+    <ul>
+      <li><b>사진 1장</b> — 이미지 파일 1개</li>
+      <li><b>사진 여러장</b> — 이미지 2~10개 (캐러셀)</li>
+      <li><b>릴스</b> — mp4/mov 영상 1개</li>
+      <li><b>사진 + 릴스</b> — 이미지와 영상 섞어서 캐러셀 (2~10개)</li>
+    </ul>
+  </div>
+</section>
+{% endblock %}
+
+{% block script %}
+<script>
+const USERNAME = "{{ acc.username }}";
+
+// ── 나이 분석 ──
+async function analyze() {
+  const box = document.getElementById('analyzeResult');
+  box.className = 'result loading'; box.textContent = '분석 중... (인스타 API 호출)';
+  try {
+    const r = await fetch(`/api/account/${USERNAME}/analyze`, { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '분석 실패');
+    document.getElementById('mFollower').textContent = d.follower_count;
+    document.getElementById('mFollowing').textContent = d.following_count;
+    document.getElementById('mMedia').textContent = d.media_count;
+    document.getElementById('ageClass').innerHTML =
+      `<span class="chip age-${d.age_class}">${d.age_class}</span>`;
+    box.className = 'result ok';
+    box.innerHTML = `${d.age_class} 계정 · 팔로워 ${d.follower_count} · 게시물 ${d.media_count}` +
+      (d.needs_warmup ? ' · <b>워밍업 필요</b>' : ' · <b>바로 투입 가능</b>');
+  } catch (e) { box.className = 'result err'; box.textContent = e.message; }
+}
+
+// ── 프로필 변경 ──
+document.getElementById('profileForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const box = document.getElementById('profileResult');
+  const fd = new FormData(e.target);
+  // 빈 값은 제외
+  for (const [k, v] of [...fd.entries()]) if (!v.trim()) fd.delete(k);
+  if (![...fd.keys()].length) { box.className='result err'; box.textContent='변경할 항목이 없다'; return; }
+  box.className = 'result loading'; box.textContent = '변경 중...';
+  try {
+    const r = await fetch(`/api/account/${USERNAME}/profile`, { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '변경 실패');
+    const parts = Object.entries(d.result).map(([k,v]) => `${k}: ${v}`);
+    box.className = 'result ok'; box.innerHTML = parts.join('<br>');
+    if (d.result.username === 'ok') setTimeout(() => location.href = '/accounts', 1500);
+  } catch (e) { box.className = 'result err'; box.textContent = e.message; }
+});
+
+// ── 프로필 사진 ──
+document.getElementById('picFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  document.getElementById('picName').textContent = f.name;
+  const box = document.getElementById('picResult');
+  const fd = new FormData(); fd.append('file', f);
+  box.className = 'result loading'; box.textContent = '프사 변경 중...';
+  try {
+    const r = await fetch(`/api/account/${USERNAME}/profile-pic`, { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '실패');
+    box.className = 'result ok'; box.textContent = '프로필 사진 변경 완료';
+  } catch (e) { box.className = 'result err'; box.textContent = e.message; }
+});
+
+// ── 업로드 ──
+let uploadKind = 'photo';
+const hints = {
+  photo: '사진 1장을 올립니다.',
+  album: '사진 2~10장을 캐러셀로 올립니다.',
+  reel: '영상(mp4/mov) 1개를 릴스로 올립니다.',
+  mixed: '사진과 영상을 섞어서 2~10개 캐러셀로 올립니다.',
+};
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+    t.classList.add('on');
+    uploadKind = t.dataset.k;
+    document.getElementById('uploadHint').textContent = hints[uploadKind];
+    const multi = (uploadKind === 'album' || uploadKind === 'mixed');
+    const inp = document.getElementById('uploadFiles');
+    inp.multiple = multi;
+    inp.accept = (uploadKind === 'reel') ? 'video/*'
+      : (uploadKind === 'photo') ? 'image/*' : 'image/*,video/*';
+    inp.value = ''; document.getElementById('uploadFileNames').textContent = '';
+  });
+});
+document.getElementById('uploadFiles').addEventListener('change', e => {
+  document.getElementById('uploadFileNames').textContent =
+    [...e.target.files].map(f => f.name).join(', ');
+});
+document.getElementById('uploadBtn').addEventListener('click', async () => {
+  const box = document.getElementById('uploadResult');
+  const files = document.getElementById('uploadFiles').files;
+  if (!files.length) { box.className='result err'; box.textContent='파일을 선택해라'; return; }
+  const fd = new FormData();
+  fd.append('kind', uploadKind);
+  fd.append('caption', document.getElementById('caption').value);
+  for (const f of files) fd.append('files', f);
+  box.className = 'result loading'; box.textContent = '업로드 중... (영상은 오래 걸릴 수 있음)';
+  try {
+    const r = await fetch(`/api/account/${USERNAME}/upload`, { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '업로드 실패');
+    box.className = 'result ok';
+    box.innerHTML = `업로드 완료! <a href="https://instagram.com/p/${d.code}/" target="_blank">게시물 보기</a>`;
+  } catch (e) { box.className = 'result err'; box.textContent = e.message; }
+});
+</script>
+{% endblock %}

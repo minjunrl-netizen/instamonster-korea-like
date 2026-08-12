@@ -23,6 +23,7 @@ DB_PATH = Path("instamonster.db")
 # ─── 계정 상태 ───
 NEW = "new"                # 등록만 됨, 로그인 전
 READY = "ready"            # 로그인 성공, 세션 있음 → 실전 투입 가능
+WARMING = "warming"        # 신규 계정 워밍업 진행 중 → 아직 실전 투입 불가
 CHALLENGE = "challenge"    # 인증 챌린지 - 수동 해결 필요
 TWO_FACTOR = "2fa"         # 2단계 인증 - 코드 필요
 BAD_PASSWORD = "bad_pw"    # 비번 틀림
@@ -129,7 +130,15 @@ def init() -> None:
 def _migrate(conn: sqlite3.Connection) -> None:
     """기존 DB에 없는 컬럼을 채운다"""
     have = {r["name"] for r in conn.execute("PRAGMA table_info(accounts)")}
-    for col, ddl in (("totp_seed", "TEXT"), ("backup_codes", "TEXT"), ("device_model", "TEXT")):
+    cols = (
+        ("totp_seed", "TEXT"), ("backup_codes", "TEXT"), ("device_model", "TEXT"),
+        ("follower_count", "INTEGER"), ("following_count", "INTEGER"),
+        ("media_count", "INTEGER"), ("age_class", "TEXT"),
+        ("warmup_started", "TEXT"), ("last_warmup", "TEXT"), ("last_post", "TEXT"),
+        ("total_posts", "INTEGER"),
+        ("ig_user_id", "TEXT"), ("email", "TEXT"), ("email_password", "TEXT"),
+    )
+    for col, ddl in cols:
         if col not in have:
             conn.execute(f"ALTER TABLE accounts ADD COLUMN {col} {ddl}")
 
@@ -336,6 +345,89 @@ def set_status(username: str, status: str, error: str | None = None) -> None:
         conn.execute(
             "UPDATE accounts SET status=?, last_error=?, updated_at=? WHERE username=?",
             (status, error, _now(), username),
+        )
+
+
+def save_metrics(username: str, metrics: dict) -> None:
+    """로그인 후 수집한 나이/활동 지표를 저장한다"""
+    with tx() as conn:
+        conn.execute(
+            """UPDATE accounts SET
+                 ig_user_id=?, follower_count=?, following_count=?,
+                 media_count=?, age_class=?, updated_at=?
+               WHERE username=?""",
+            (
+                str(metrics.get("user_id", "")),
+                int(metrics.get("follower_count", 0)),
+                int(metrics.get("following_count", 0)),
+                int(metrics.get("media_count", 0)),
+                str(metrics.get("age_class", "")),
+                _now(), username,
+            ),
+        )
+
+
+def start_warmup(username: str) -> None:
+    """계정을 워밍업 상태로 전환하고 시작일을 기록"""
+    with tx() as conn:
+        conn.execute(
+            """UPDATE accounts SET
+                 status=?, warmup_day=1, warmup_started=?, updated_at=?
+               WHERE username=?""",
+            (WARMING, _now(), _now(), username),
+        )
+
+
+def advance_warmup(username: str, graduated: bool = False) -> None:
+    """워밍업 하루 진행. graduated면 ready로 전환."""
+    with tx() as conn:
+        if graduated:
+            conn.execute(
+                "UPDATE accounts SET status=?, last_warmup=?, updated_at=? WHERE username=?",
+                (READY, _now(), _now(), username),
+            )
+        else:
+            conn.execute(
+                """UPDATE accounts SET
+                     warmup_day=warmup_day+1, last_warmup=?, updated_at=?
+                   WHERE username=?""",
+                (_now(), _now(), username),
+            )
+
+
+def warming_accounts(due_only: bool = True) -> list[dict]:
+    """워밍업 중인 계정 목록. due_only면 오늘 아직 워밍업 안 한 것만."""
+    today = date.today().isoformat()
+    q = "SELECT * FROM accounts WHERE status=?"
+    params = [WARMING]
+    if due_only:
+        q += " AND (last_warmup IS NULL OR substr(last_warmup,1,10)<>?)"
+        params.append(today)
+    q += " ORDER BY warmup_day ASC, username"
+    return [dict(r) for r in connect().execute(q, params).fetchall()]
+
+
+def set_email(username: str, email: str, email_password: str) -> None:
+    with tx() as conn:
+        conn.execute(
+            "UPDATE accounts SET email=?, email_password=?, updated_at=? WHERE username=?",
+            (email, email_password, _now(), username),
+        )
+
+
+def get_account(username: str) -> dict | None:
+    r = connect().execute("SELECT * FROM accounts WHERE username=?", (username,)).fetchone()
+    return dict(r) if r else None
+
+
+def record_post(username: str) -> None:
+    """포스팅 완료 기록 (마지막 포스팅일 갱신 + 카운트 증가)"""
+    with tx() as conn:
+        conn.execute(
+            """UPDATE accounts SET
+                 last_post=?, total_posts=COALESCE(total_posts,0)+1, updated_at=?
+               WHERE username=?""",
+            (_now(), _now(), username),
         )
 
 

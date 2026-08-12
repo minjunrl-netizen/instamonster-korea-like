@@ -98,6 +98,10 @@ code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-siz
 .provider-toggle .ptog.on {
   background: rgba(79,140,255,.12); border-color: var(--accent); color: var(--accent);
 }
+.chip.warming { background: rgba(240,168,60,.15); color: var(--warn); }
+.chip.age-fresh { background: rgba(242,86,77,.15); color: var(--err); }
+.chip.age-young { background: rgba(240,168,60,.15); color: var(--warn); }
+.chip.age-aged { background: rgba(53,196,138,.15); color: var(--ok); }
 
 .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
 h1 { font-size: 22px; margin: 0 0 18px; letter-spacing: -.4px; }

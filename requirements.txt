@@ -1,6 +1,10 @@
 instagrapi>=2.5.0
 requests>=2.31.0
 
+# 이미지 처리 (EXIF 제거 + 미세 변형 + 가짜 EXIF)
+Pillow>=10.0.0
+piexif>=1.1.3
+
 # 로컬 관리 웹서버
 fastapi>=0.110.0
 uvicorn>=0.27.0

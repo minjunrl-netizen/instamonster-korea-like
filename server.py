@@ -140,6 +140,39 @@ def load_config() -> dict:
 def slot_count() -> int:
     return len(load_config()["xproxy"]["slots"])
 
+
+def open_account_client(username: str):
+    """
+    특정 계정의 세션+프록시로 instagrapi 클라이언트를 연다.
+    프로필 변경/업로드/분석에 쓴다. (로그인 호출 없음, 세션 재사용)
+    """
+    from bulk_login import make_client
+    from xproxy_manager import make_provider
+
+    acc = db.get_account(username)
+    if not acc:
+        raise HTTPException(404, f"계정 없음: {username}")
+    if not acc.get("session_file"):
+        raise HTTPException(400, f"{username}은 아직 로그인되지 않았다 (세션 없음)")
+
+    cfg = load_config()
+    provider = make_provider(cfg)
+    slot = acc.get("proxy_slot") or 0
+
+    cl = make_client(request_timeout=30)
+    try:
+        cl.load_settings(acc["session_file"])
+    except Exception as e:
+        raise HTTPException(400, f"세션 로드 실패: {e}")
+
+    if not getattr(provider, "is_direct", False):
+        cl.set_proxy(provider.get_proxy_url(slot))
+    cl.delay_range = [2, 5]
+
+    if not cl.user_id:
+        raise HTTPException(400, f"{username} 세션이 만료됐다. 재로그인 필요.")
+    return cl
+
 def _check_admin(username: str, password: str) -> bool:
     """관리자 아이디/비번 검증 (비번은 sha256 해시로 저장, 타이밍 세이프 비교)"""
     admin = load_config().get("admin", {})
@@ -199,6 +232,8 @@ def page_dashboard(request: Request):
         "provider": cfg.get("xproxy", {}).get("provider", "xproxy"),
         "settings": cfg.get("settings", {}),
         "jobs": db.recent_jobs(10),
+        "warming_count": db.stats().get("by_status", {}).get("warming", 0),
+        "warming_due": len(db.warming_accounts(due_only=True)),
     })
 
 
@@ -425,6 +460,190 @@ def api_provider_set(provider: str = Form(...)):
         json.dump(cfg, f, ensure_ascii=False, indent=2)
     return {"ok": True, "provider": provider}
 
+
+# ─────────────────────── API: 계정 액션 (분석/프로필/업로드/워밍업) ───────────────────────
+
+@app.post("/api/account/{username}/analyze")
+def api_account_analyze(username: str):
+    """계정 나이/활동 분석 → DB 저장"""
+    from account_actions import analyze_account
+    cl = open_account_client(username)
+    try:
+        metrics = analyze_account(cl)
+    except Exception as e:
+        raise HTTPException(400, f"분석 실패: {e}")
+    db.save_metrics(username, metrics)
+    return metrics
+
+
+@app.post("/api/account/{username}/profile")
+def api_account_profile(
+    username: str,
+    full_name: str = Form(None),
+    biography: str = Form(None),
+    external_url: str = Form(None),
+    new_username: str = Form(None),
+):
+    """프로필 변경 (이름/한줄소개/링크/아이디)"""
+    from account_actions import ProfileEditor
+    cl = open_account_client(username)
+    editor = ProfileEditor(cl)
+    result = editor.apply(
+        full_name=full_name or None,
+        biography=biography or None,
+        external_url=external_url or None,
+        username=new_username or None,
+    )
+    # 아이디를 바꿨으면 DB의 username도 갱신
+    if new_username and result.get("username") == "ok":
+        db.replace_account(username, new_username.strip().lstrip("@"),
+                           db.get_account(username)["password"])
+    return {"result": result}
+
+
+@app.post("/api/account/{username}/profile-pic")
+async def api_account_profile_pic(username: str, file: UploadFile = File(...)):
+    """프로필 사진 변경"""
+    from account_actions import ProfileEditor
+    tmp = await _save_upload(file)
+    try:
+        cl = open_account_client(username)
+        ProfileEditor(cl).change_profile_pic(str(tmp))
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(400, f"프사 변경 실패: {e}")
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+@app.post("/api/account/{username}/upload")
+async def api_account_upload(
+    username: str,
+    kind: str = Form(...),
+    caption: str = Form(""),
+    files: list[UploadFile] = File(...),
+):
+    """
+    게시물 업로드.
+      kind: photo(사진1장) / album(사진여러장) / reel(릴스) / mixed(사진+릴스)
+    """
+    from account_actions import PostUploader
+    if kind not in ("photo", "album", "reel", "mixed"):
+        raise HTTPException(400, "kind는 photo/album/reel/mixed")
+
+    saved = [await _save_upload(f) for f in files]
+    try:
+        cl = open_account_client(username)
+        acc = db.get_account(username)
+        uploader = PostUploader(cl, device_model=acc.get("device_model"))
+        media = uploader.upload(kind, [str(p) for p in saved], caption)
+        return {"ok": True, "code": getattr(media, "code", ""),
+                "pk": str(getattr(media, "pk", ""))}
+    except Exception as e:
+        raise HTTPException(400, f"업로드 실패: {e}")
+    finally:
+        for p in saved:
+            p.unlink(missing_ok=True)
+
+
+async def _save_upload(file: UploadFile):
+    """업로드 파일을 임시 저장하고 경로 반환"""
+    import tempfile
+    suffix = Path(file.filename or "up").suffix or ".bin"
+    fd, path = tempfile.mkstemp(suffix=suffix)
+    with open(fd, "wb") as f:
+        f.write(await file.read())
+    return Path(path)
+
+
+@app.get("/account/{username}", response_class=HTMLResponse)
+def page_account(request: Request, username: str):
+    acc = db.get_account(username)
+    if not acc:
+        raise HTTPException(404, "계정 없음")
+    return templates.TemplateResponse("account.html", {
+        "request": request, "acc": acc, "stats": db.stats(),
+    })
+
+
+# ─────────────────────── API: 워밍업 ───────────────────────
+
+class WarmupRunner:
+    """워밍업 배치를 백그라운드로 돌린다 (동시 1개)"""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.engine = None
+        self.thread: threading.Thread | None = None
+
+    @property
+    def busy(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    def start(self) -> int:
+        with self.lock:
+            if self.busy:
+                raise HTTPException(409, "워밍업이 이미 실행 중이다")
+            due = db.warming_accounts(due_only=True)
+            if not due:
+                raise HTTPException(400, "오늘 워밍업할 계정이 없다")
+
+            job_id = db.create_job("warmup", total=len(due))
+            from warmup_engine import WarmupEngine
+            engine = WarmupEngine(CONFIG_PATH)
+            self.engine = engine
+
+            def work():
+                try:
+                    c = engine.run(job_id=job_id)
+                    db.finish_job(job_id, "done",
+                                  f"진행 {c['warmed']} / 포스팅 {c['posted']} / "
+                                  f"졸업 {c['graduated']} / 실패 {c['failed']}")
+                except Exception as e:
+                    logger.exception("워밍업 실패")
+                    db.log_event(job_id, "error", f"작업 중단: {e}")
+                    db.finish_job(job_id, "failed", str(e))
+
+            self.thread = threading.Thread(target=work, daemon=True, name="warmup")
+            self.thread.start()
+            return job_id
+
+    def stop(self) -> bool:
+        if self.engine and self.busy:
+            self.engine.stop()
+            return True
+        return False
+
+
+warmup_runner = WarmupRunner()
+
+
+@app.post("/api/warmup/start")
+def api_warmup_start():
+    """오늘치 워밍업 배치 시작 (워밍업 중인 계정 전체)"""
+    return {"job_id": warmup_runner.start()}
+
+
+@app.post("/api/warmup/stop")
+def api_warmup_stop():
+    return {"stopped": warmup_runner.stop()}
+
+
+@app.get("/api/warmup/status")
+def api_warmup_status():
+    """워밍업 현황"""
+    warming = db.warming_accounts(due_only=False)
+    due = db.warming_accounts(due_only=True)
+    return {
+        "warming_total": len(warming),
+        "due_today": len(due),
+        "running": warmup_runner.busy,
+        "accounts": [
+            {"username": a["username"], "day": a["warmup_day"],
+             "age_class": a.get("age_class"), "total_posts": a.get("total_posts") or 0}
+            for a in warming
+        ],
+    }
 
 if __name__ == "__main__":
     import uvicorn

@@ -105,11 +105,12 @@ class BulkLogin:
         # 429를 받으면 이 슬롯을 잠시 쉬게 한다 (대역 과열 방지)
         self.cooldown_on_429 = float(login_cfg.get("cooldown_on_429_seconds", 90))
         self.warmup_after_login = bool(login_cfg.get("warmup_after_login", True))
+        self.auto_warmup = bool(login_cfg.get("auto_warmup", True))
 
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self.job_id: int | None = None
-        self.counts = {"ready": 0, "challenge": 0, "2fa": 0,
+        self.counts = {"ready": 0, "warming": 0, "challenge": 0, "2fa": 0,
                        "bad_pw": 0, "not_exist": 0, "banned": 0,
                        "rate_limit": 0, "failed": 0}
 
@@ -235,7 +236,41 @@ class BulkLogin:
 
         session_path.parent.mkdir(parents=True, exist_ok=True)
         cl.dump_settings(str(session_path))
-        return db.READY, ""
+
+        # 계정 나이/활동 분석 → 워밍업 필요 여부 자동 판단
+        status = self._analyze_and_route(cl, acc["username"])
+        return status, ""
+
+    def _analyze_and_route(self, cl: Client, username: str) -> str:
+        """
+        로그인 성공 계정의 나이를 분석해서 상태를 정한다.
+          신규(fresh/young) → warming (워밍업 시작)
+          숙성(aged)        → ready (바로 투입 가능)
+
+        auto_warmup 설정이 꺼져있으면 무조건 ready.
+        """
+        if not self.auto_warmup:
+            return db.READY
+        try:
+            from account_actions import analyze_account
+            metrics = analyze_account(cl)
+            db.save_metrics(username, metrics)
+            if metrics["needs_warmup"]:
+                db.start_warmup(username)
+                logger.info(
+                    f"  🌱 [{username}] {metrics['age_class']} 계정 "
+                    f"(팔로워 {metrics['follower_count']}, 게시물 {metrics['media_count']}) "
+                    f"→ 워밍업 시작"
+                )
+                return db.WARMING
+            logger.info(
+                f"  ✅ [{username}] {metrics['age_class']} 계정 "
+                f"(팔로워 {metrics['follower_count']}, 게시물 {metrics['media_count']}) "
+                f"→ 바로 투입 가능"
+            )
+        except Exception as e:
+            logger.warning(f"  [{username}] 나이 분석 실패, ready로 처리: {e}")
+        return db.READY
 
     def _solve_two_factor(self, cl: Client, acc: dict,
                           session_path: Path) -> tuple[str, str]:
@@ -386,7 +421,7 @@ class BulkLogin:
         """
         self.job_id = job_id
         self._stop.clear()
-        self.counts = {"ready": 0, "challenge": 0, "2fa": 0,
+        self.counts = {"ready": 0, "warming": 0, "challenge": 0, "2fa": 0,
                        "bad_pw": 0, "not_exist": 0, "banned": 0,
                        "rate_limit": 0, "failed": 0}
 

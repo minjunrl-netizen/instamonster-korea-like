@@ -349,6 +349,11 @@ class BulkLogin:
         if isinstance(e, ReloginAttemptExceeded):
             return db.RATE_LIMITED, "재로그인 시도 초과 - 나중에 재시도"
 
+        # instagrapi가 챌린지 응답을 파싱하다 터지면 KeyError('challenge')가 난다.
+        # FAILED로 두면 무한 재시도하므로 CHALLENGE로 분류(수동 확인 필요).
+        if isinstance(e, KeyError) and "challenge" in msg.lower():
+            return db.CHALLENGE, "챌린지 응답 (instagrapi 파싱 실패 - 수동 확인)"
+
         # "계정을 찾을 수 없습니다" / "find your account" 패턴
         if "찾을 수 없" in msg or "find your account" in msg.lower() or "find" in msg.lower() and "account" in msg.lower():
             return db.NOT_EXIST, f"계정 삭제/비활성화: {msg[:80]}"

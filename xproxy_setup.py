@@ -286,6 +286,50 @@ def checklist():
     print("=" * 60)
 
 
+# ─────────────────────────── carrier ───────────────────────────
+
+def carrier():
+    """각 슬롯 IP의 통신사(SKT/KT/LGU+)를 자동 감지하고 config 이름 갱신"""
+    from carrier_detect import detect_slot_carriers, suggest_slot_name
+    from xproxy_manager import make_provider
+
+    cfg = load_cfg()
+    provider = make_provider(cfg)
+
+    logger.info("각 슬롯 IP → 통신사 자동 감지 중... (ASN 조회)\n")
+    results = detect_slot_carriers(provider)
+
+    logger.info(f"{'슬롯':<12}{'IP':<18}{'통신사':<8}{'ASN'}")
+    logger.info("-" * 60)
+    for r in results:
+        mobile = "📱" if r.get("mobile") else "  "
+        logger.info(f"{r['current_name']:<12}{str(r['ip']):<18}{r['carrier']:<8}{mobile} {r['asn']}")
+
+    # 통신사 분포
+    from collections import Counter
+    dist = Counter(r["carrier"] for r in results if r["carrier"] not in ("?",))
+    logger.info(f"\n통신사 분포: {dict(dist)}")
+    if len(dist) == 1 and list(dist)[0] != "?":
+        logger.info("⚠️ 유심이 전부 같은 통신사입니다. IP 대역 분산을 위해 섞는 걸 권장.")
+
+    # config 슬롯 이름 갱신 제안
+    detected = [r for r in results if r["carrier"] not in ("?", "기타")]
+    if not detected:
+        logger.info("\n통신사를 감지하지 못했습니다 (IP 응답 없음). probe로 슬롯 상태 먼저 확인.")
+        return
+
+    logger.info("\n감지된 통신사로 슬롯 이름을 자동 갱신합니다:")
+    for r in results:
+        new_name = suggest_slot_name(r["slot_index"], r["carrier"])
+        if new_name != r["current_name"]:
+            logger.info(f"  {r['current_name']}  →  {new_name}")
+        cfg["xproxy"]["slots"][r["slot_index"]]["name"] = new_name
+
+    with open(CONFIG, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    logger.info("\n✅ config.json 슬롯 이름 갱신 완료.")
+
+
 # ─────────────────────────── main ───────────────────────────
 
 def main():
@@ -296,10 +340,12 @@ def main():
         probe()
     elif cmd == "apicheck":
         apicheck()
+    elif cmd == "carrier":
+        carrier()
     elif cmd == "checklist":
         checklist()
     else:
-        print("사용법: python xproxy_setup.py [scan|probe|apicheck|checklist]")
+        print("사용법: python xproxy_setup.py [scan|probe|apicheck|carrier|checklist]")
 
 
 if __name__ == "__main__":

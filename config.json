@@ -1,24 +1,24 @@
 {
   "xproxy": {
     "provider": "xproxy",
-    "host": "192.168.0.100",
-    "api_port": 8080,
+    "host": "192.168.0.163",
+    "api_port": 80,
     "proxy_type": "socks5",
-    "api_pattern": null,
+    "api_pattern": "/api/v1/rotate_ip/position/{pos}",
     "slots": [
       {
-        "port": 30001,
-        "name": "유심01-SKT",
+        "port": 25101,
+        "name": "유심01-KT",
         "modem": 1
       },
       {
-        "port": 30002,
-        "name": "유심02-KT",
+        "port": 25102,
+        "name": "유심02",
         "modem": 2
       },
       {
-        "port": 30003,
-        "name": "유심03-LGU",
+        "port": 25103,
+        "name": "유심03",
         "modem": 3
       }
     ]

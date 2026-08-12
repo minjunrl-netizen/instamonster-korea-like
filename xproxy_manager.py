@@ -21,7 +21,9 @@ logger = logging.getLogger(__name__)
 
 
 # 장비 버전마다 엔드포인트가 다르다. 첫 성공한 패턴을 학습해서 이후 재사용한다.
+# 공식 XProxy.IO API(/api/v1/...)를 최우선으로 둔다.
 API_PATTERNS = (
+    "/api/v1/rotate_ip/position/{pos}",
     "/api/changeIP/{pos}",
     "/api/rotate/{pos}",
     "/rotating?modem={pos}",
@@ -135,6 +137,45 @@ class XProxyManager:
         out = {self.slot_name(i): ok for i, ok in enumerate(results)}
         ok_count = sum(1 for v in out.values() if v)
         logger.info(f"전체 {len(self.slots)}개 슬롯 로테이션: {ok_count}개 성공")
+        return out
+
+    # ─── 장비 정보 (공식 API) ───
+
+    def info_list(self) -> list[dict]:
+        """
+        장비에서 직접 전체 모뎀 정보를 가져온다 (XProxy.IO 공식 API).
+
+        포트/공인IP/통신사/신호강도/SIM활성 여부를 장비가 알려주므로
+        ASN 조회 없이 통신사를 바로 알 수 있다.
+
+        반환: [{position, socks5_port, proxy_port, public_ip, provider,
+                network_mode, signal, sim_live}, ...]  (실패 시 빈 리스트)
+        """
+        try:
+            resp = self._session.get(
+                f"http://{self.host}:{self.api_port}/api/v1/info_list", timeout=10
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+        except Exception as e:
+            logger.debug(f"info_list 조회 실패: {e}")
+            return []
+
+        out = []
+        for d in data:
+            ex = d.get("device_extra_info", {}) or {}
+            out.append({
+                "position": d.get("position"),
+                "host": d.get("host", self.host),
+                "socks5_port": d.get("socks5_port"),
+                "proxy_port": d.get("proxy_port"),
+                "public_ip": d.get("public_ip"),
+                "provider": ex.get("provider"),
+                "network_mode": ex.get("network_mode"),
+                "signal": ex.get("signal_strength"),
+                "sim_live": ex.get("sim_live"),
+                "imei": ex.get("imei"),
+            })
         return out
 
     # ─── 상태 확인 ───

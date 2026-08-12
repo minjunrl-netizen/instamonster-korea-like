@@ -272,15 +272,15 @@ class WarmupStep:
     """
     하루치 워밍업 행동을 수행한다.
 
-    스케줄 (계정 나이/일차에 따라 볼륨 증가):
+    스케줄 (14일 졸업, 계정 나이/일차에 따라 볼륨 증가):
       Day 1~3:   읽기만 (피드 스크롤, 스토리 보기)
-      Day 4~7:   좋아요 2~3개 + 읽기
-      Day 8~14:  좋아요 3~5개 + 게시물 1개(선택)
-      Day 15~20: 좋아요 5~8개 + 댓글
-      Day 21+:   졸업 (실전 투입 가능)
+      Day 4~6:   좋아요 2~3개 + 읽기
+      Day 7~10:  좋아요 3~5개 + 게시물 1개(선택)
+      Day 11~13: 좋아요 5~7개 + 게시물
+      Day 14+:   졸업 (실전 투입 가능, 단 저볼륨부터)
     """
 
-    GRADUATION_DAY = 21
+    GRADUATION_DAY = 14
 
     def __init__(self, client, human):
         self.cl = client
@@ -290,12 +290,12 @@ class WarmupStep:
     def plan_for_day(day: int) -> dict:
         if day <= 3:
             return {"phase": "읽기만", "likes": 0, "feed": 3, "stories": 2, "can_post": False}
-        if day <= 7:
+        if day <= 6:
             return {"phase": "초기 좋아요", "likes": random.randint(2, 3), "feed": 3, "stories": 2, "can_post": False}
-        if day <= 14:
+        if day <= 10:
             return {"phase": "볼륨 증가", "likes": random.randint(3, 5), "feed": 4, "stories": 3, "can_post": True}
         if day < WarmupStep.GRADUATION_DAY:
-            return {"phase": "실전 준비", "likes": random.randint(5, 8), "feed": 4, "stories": 3, "can_post": True}
+            return {"phase": "실전 준비", "likes": random.randint(5, 7), "feed": 4, "stories": 3, "can_post": True}
         return {"phase": "졸업", "likes": 0, "feed": 2, "stories": 1, "can_post": False, "graduated": True}
 
     def run_day(self, day: int) -> dict:

@@ -136,6 +136,7 @@ def _migrate(conn: sqlite3.Connection) -> None:
         ("media_count", "INTEGER"), ("age_class", "TEXT"),
         ("warmup_started", "TEXT"), ("last_warmup", "TEXT"), ("last_post", "TEXT"),
         ("total_posts", "INTEGER"),
+        ("health_status", "TEXT"), ("last_health_check", "TEXT"),
         ("ig_user_id", "TEXT"), ("email", "TEXT"), ("email_password", "TEXT"),
     )
     for col, ddl in cols:
@@ -429,6 +430,37 @@ def record_post(username: str) -> None:
                WHERE username=?""",
             (_now(), _now(), username),
         )
+
+
+def record_health(username: str, health: str, new_status: str | None = None) -> None:
+    """
+    헬스체크 결과 기록. new_status가 있으면 계정 상태도 갱신
+    (죽은 계정을 banned/challenge 등으로 전환).
+    """
+    with tx() as conn:
+        if new_status:
+            conn.execute(
+                """UPDATE accounts SET
+                     health_status=?, last_health_check=?, status=?, updated_at=?
+                   WHERE username=?""",
+                (health, _now(), new_status, _now(), username),
+            )
+        else:
+            conn.execute(
+                """UPDATE accounts SET
+                     health_status=?, last_health_check=?, updated_at=?
+                   WHERE username=?""",
+                (health, _now(), _now(), username),
+            )
+
+
+def monitorable_accounts() -> list[dict]:
+    """헬스체크 대상: 세션이 있는 계정 (ready/warming)"""
+    rows = connect().execute(
+        "SELECT * FROM accounts WHERE status IN (?, ?) AND session_file IS NOT NULL",
+        (READY, WARMING),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def bump_likes(username: str, n: int = 1) -> None:

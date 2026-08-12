@@ -376,9 +376,10 @@ class BulkLogin:
                 self.xproxy.rotate_ip(slot, wait_seconds=self.rotate_wait)
 
             status, message = self._login_one(acc, slot)
+            # 로그인 성공(ready/warming) 계정은 세션이 디스크에 저장됐으므로 경로를 기록한다.
             session_file = (
                 str(self.sessions_dir / f"{acc['username']}.json")
-                if status == db.READY else None
+                if status in (db.READY, db.WARMING) else None
             )
             db.mark_login_result(acc["username"], status, session_file, message or None)
 

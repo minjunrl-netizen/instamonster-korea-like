@@ -101,5 +101,9 @@
     "human_simulation": true,
     "view_media_probability": 0.25,
     "random_action_probability": 0.2
+  },
+  "admin": {
+    "username": "bjdlclrh",
+    "password_sha256": "ee3e16303edba1ae73b8c76ea8d74c92df9f38fe951a0220a9f1bc35b23efdcc"
   }
 }

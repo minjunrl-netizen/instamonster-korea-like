@@ -10,6 +10,8 @@ sessions/
 *.db-wal
 *.db-shm
 instamonster.db*
+# 세션 서명 키
+.session_secret
 
 # ─── 계정별 콘텐츠 ───
 content/*/images/

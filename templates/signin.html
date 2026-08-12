@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로그인 · 인스타몬스터</title>
+<link rel="stylesheet" href="/static/app.css">
+<style>
+  body {
+    display: flex; align-items: center; justify-content: center;
+    min-height: 100vh; margin: 0;
+  }
+  .signin {
+    width: 100%; max-width: 360px; padding: 0 20px;
+  }
+  .signin .brand {
+    font-size: 20px; font-weight: 700; letter-spacing: -.4px;
+    text-align: center; margin-bottom: 4px;
+  }
+  .signin .sub {
+    text-align: center; color: var(--dim); font-size: 13px; margin-bottom: 28px;
+  }
+  .signin form {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; padding: 24px;
+  }
+  .signin label {
+    display: block; font-size: 12px; color: var(--dim);
+    margin: 0 0 6px; font-weight: 500;
+  }
+  .signin .field { margin-bottom: 16px; }
+  .signin input {
+    width: 100%; height: 42px; padding: 0 13px;
+  }
+  /* 브라우저 자동완성이 흰 배경으로 덮는 것 방지 */
+  .signin input:-webkit-autofill,
+  .signin input:-webkit-autofill:hover,
+  .signin input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--text);
+    -webkit-box-shadow: 0 0 0 1000px var(--bg) inset;
+    caret-color: var(--text);
+    transition: background-color 9999s ease-in-out 0s;
+  }
+  .signin button {
+    width: 100%; height: 44px; margin-top: 4px;
+    font-size: 14px; font-weight: 600;
+  }
+  .signin .err {
+    background: rgba(242,86,77,.1); border: 1px solid rgba(242,86,77,.3);
+    color: var(--err); font-size: 13px; padding: 10px 12px;
+    border-radius: 8px; margin-bottom: 16px;
+  }
+  .signin .foot {
+    text-align: center; color: var(--dim); font-size: 11px; margin-top: 18px;
+  }
+</style>
+</head>
+<body>
+<main class="signin">
+  <div class="brand">인스타몬스터</div>
+  <div class="sub">관리자 로그인</div>
+
+  <form method="post" action="/signin" autocomplete="off">
+    {% if error %}
+    <div class="err">아이디 또는 비밀번호가 올바르지 않습니다.</div>
+    {% endif %}
+
+    <div class="field">
+      <label for="username">아이디</label>
+      <input type="text" id="username" name="username" required autofocus
+             spellcheck="false" autocapitalize="off">
+    </div>
+
+    <div class="field">
+      <label for="password">비밀번호</label>
+      <input type="password" id="password" name="password" required>
+    </div>
+
+    <button type="submit" class="btn primary">로그인</button>
+  </form>
+
+  <div class="foot">인가된 관리자만 접근할 수 있습니다.</div>
+</main>
+</body>
+</html>

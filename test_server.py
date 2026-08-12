@@ -149,6 +149,10 @@ def build_env(tmp: Path, slots: int = 5) -> str:
         },
         "settings": {"sessions_dir": str(tmp / "sessions")},
         "login": {"delay_min": 0, "delay_max": 0, "ip_rotate_wait_seconds": 0},
+        "admin": {
+            "username": "bjdlclrh",
+            "password_sha256": "ee3e16303edba1ae73b8c76ea8d74c92df9f38fe951a0220a9f1bc35b23efdcc",
+        },
     }
     p = tmp / "config.json"
     p.write_text(json.dumps(cfg), encoding="utf-8")
@@ -504,6 +508,11 @@ def test_web_routes():
 
         with client:
             ok = True
+            # 인증 미들웨어 통과를 위해 먼저 로그인
+            r = client.post("/signin", data={"username": "bjdlclrh", "password": "wnsrl1019"},
+                            follow_redirects=False)
+            ok &= check("관리자 로그인 성공", r.status_code == 302, f"HTTP {r.status_code}")
+
             for path in ["/", "/accounts", "/login"]:
                 r = client.get(path)
                 ok &= check(f"GET {path}", r.status_code == 200, f"HTTP {r.status_code}")
@@ -577,6 +586,7 @@ def test_web_login_flow():
         try:
             client = TestClient(server.app)
             with client:
+                client.post("/signin", data={"username": "bjdlclrh", "password": "wnsrl1019"})
                 lines = "\n".join(f"ok{i:04d}:pw{i}" for i in range(40))
                 lines += "\n" + "\n".join(f"chal{i:02d}:pw" for i in range(5))
                 client.post("/api/accounts/import", data={"text": lines})

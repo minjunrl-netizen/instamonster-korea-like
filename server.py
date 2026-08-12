@@ -9,15 +9,19 @@
 """
 
 import json
+import hmac
+import hashlib
+import secrets
 import logging
 import threading
 from pathlib import Path
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, UploadFile, File, Form, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 
 import db
 from bulk_login import BulkLogin, parse_account_text
@@ -37,6 +41,43 @@ templates = Jinja2Templates(directory=str(BASE / "templates"))
 
 (BASE / "static").mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
+
+
+def _session_secret() -> str:
+    """세션 서명 키 — 재시작해도 로그인이 유지되도록 파일에 영구 저장"""
+    f = BASE / ".session_secret"
+    if f.exists():
+        return f.read_text(encoding="utf-8").strip()
+    s = secrets.token_hex(32)
+    f.write_text(s, encoding="utf-8")
+    return s
+
+
+# 인증 없이 접근 가능한 경로
+PUBLIC_PATHS = {"/signin"}
+PUBLIC_PREFIXES = ("/static",)
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    """로그인 안 하면 모든 페이지를 /signin으로 돌린다"""
+    path = request.url.path
+    if path in PUBLIC_PATHS or path.startswith(PUBLIC_PREFIXES):
+        return await call_next(request)
+
+    if request.session.get("auth"):
+        return await call_next(request)
+
+    # API는 401, 페이지는 로그인으로 리다이렉트
+    if path.startswith("/api/"):
+        return JSONResponse({"detail": "로그인이 필요합니다"}, status_code=401)
+    return RedirectResponse("/signin", status_code=302)
+
+
+# SessionMiddleware를 require_login보다 나중에 추가 → 더 바깥에서 먼저 실행되어
+# require_login이 request.session에 접근할 수 있게 한다.
+app.add_middleware(SessionMiddleware, secret_key=_session_secret(),
+                   session_cookie="im_session", max_age=60 * 60 * 12)
 
 
 class Runner:
@@ -99,6 +140,18 @@ def load_config() -> dict:
 def slot_count() -> int:
     return len(load_config()["xproxy"]["slots"])
 
+def _check_admin(username: str, password: str) -> bool:
+    """관리자 아이디/비번 검증 (비번은 sha256 해시로 저장, 타이밍 세이프 비교)"""
+    admin = load_config().get("admin", {})
+    want_user = str(admin.get("username", ""))
+    want_hash = str(admin.get("password_sha256", ""))
+    got_hash = hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return (
+        bool(want_user) and bool(want_hash)
+        and hmac.compare_digest(username.strip(), want_user)
+        and hmac.compare_digest(got_hash, want_hash)
+    )
+
 
 @asynccontextmanager
 async def _lifespan(_app):
@@ -112,6 +165,29 @@ async def _lifespan(_app):
 
 
 # ─────────────────────── 페이지 ───────────────────────
+
+@app.get("/signin", response_class=HTMLResponse)
+def page_signin(request: Request, error: str = ""):
+    # 이미 로그인했으면 대시보드로
+    if request.session.get("auth"):
+        return RedirectResponse("/", status_code=302)
+    return templates.TemplateResponse("signin.html", {"request": request, "error": error})
+
+
+@app.post("/signin")
+def do_signin(request: Request, username: str = Form(...), password: str = Form(...)):
+    if _check_admin(username, password):
+        request.session["auth"] = True
+        request.session["user"] = username.strip()
+        return RedirectResponse("/", status_code=302)
+    return RedirectResponse("/signin?error=1", status_code=302)
+
+
+@app.get("/signout")
+def do_signout(request: Request):
+    request.session.clear()
+    return RedirectResponse("/signin", status_code=302)
+
 
 @app.get("/", response_class=HTMLResponse)
 def page_dashboard(request: Request):

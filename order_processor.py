@@ -37,7 +37,7 @@ from instagrapi.exceptions import (
     MediaNotFound,
 )
 
-from xproxy_manager import XProxyManager
+from xproxy_manager import XProxyManager, make_provider
 from human_behavior import HumanBehavior
 import db
 
@@ -257,16 +257,7 @@ class OrderProcessor:
         self.view_media_prob = float(settings.get("view_media_probability", 0.25))
         self.random_action_prob = float(settings.get("random_action_probability", 0.2))
 
-        xp_cfg = self.config["xproxy"]
-        self.xproxy = XProxyManager(
-            host=xp_cfg["host"],
-            api_port=xp_cfg["api_port"],
-            proxy_type=xp_cfg.get("proxy_type", "socks5"),
-            slots=xp_cfg["slots"],
-            api_pattern=xp_cfg.get("api_pattern"),
-            username=xp_cfg.get("username"),
-            password=xp_cfg.get("password"),
-        )
+        self.xproxy = make_provider(self.config)
 
         self.pool = AccountPool(
             settings.get("sessions_dir", "sessions"),

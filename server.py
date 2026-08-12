@@ -196,6 +196,7 @@ def page_dashboard(request: Request):
         "request": request,
         "stats": db.stats(),
         "slots": cfg["xproxy"]["slots"],
+        "provider": cfg.get("xproxy", {}).get("provider", "xproxy"),
         "settings": cfg.get("settings", {}),
         "jobs": db.recent_jobs(10),
     })
@@ -387,15 +388,11 @@ def api_xproxy_health():
     슬롯의 외부 IP가 실제 IP와 같으면 프록시가 안 걸린 것이다.
     그 상태로 로그인하면 집 IP 하나에 계정 수천 개가 묶인다.
     """
-    from xproxy_manager import XProxyManager
-    xp = load_config()["xproxy"]
+    from xproxy_manager import make_provider
+    cfg = load_config()
+    xp = cfg.get("xproxy", {})
     try:
-        mgr = XProxyManager(
-            host=xp["host"], api_port=xp["api_port"],
-            proxy_type=xp.get("proxy_type", "socks5"), slots=xp["slots"],
-            api_pattern=xp.get("api_pattern"),
-            username=xp.get("username"), password=xp.get("password"),
-        )
+        mgr = make_provider(cfg)
         return mgr.preflight()
     except ValueError as e:
         return {
@@ -403,6 +400,30 @@ def api_xproxy_health():
             "online": 0, "total": len(xp.get("slots", [])), "unique_ips": 0,
             "leaking": [], "offline": [], "duplicate": False, "home_ip": "unknown",
         }
+
+
+@app.get("/api/provider")
+def api_provider_get():
+    """현재 프로바이더 모드 + ADB 기기 목록"""
+    from adb_provider import list_adb_devices
+    cfg = load_config()
+    return {
+        "provider": cfg.get("xproxy", {}).get("provider", "xproxy"),
+        "adb_devices": list_adb_devices(),
+        "adb": cfg.get("adb", {}),
+    }
+
+
+@app.post("/api/provider")
+def api_provider_set(provider: str = Form(...)):
+    """프로바이더 모드 전환 (xproxy ↔ adb) — config.json에 저장"""
+    if provider not in ("xproxy", "adb"):
+        raise HTTPException(400, "provider는 xproxy 또는 adb만 가능")
+    cfg = load_config()
+    cfg.setdefault("xproxy", {})["provider"] = provider
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return {"ok": True, "provider": provider}
 
 
 if __name__ == "__main__":

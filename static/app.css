@@ -88,6 +88,16 @@ code { background: var(--panel2); padding: 1px 5px; border-radius: 4px; font-siz
   cursor: pointer; font-size: 16px; line-height: 1; padding: 4px 8px;
 }
 .acc-grid .rowdel:hover { color: var(--err); }
+.provider-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+.provider-toggle .ptog {
+  flex: 1; padding: 10px 12px; border-radius: 8px; cursor: pointer;
+  background: var(--panel2); border: 1px solid var(--line);
+  color: var(--dim); font: inherit; font-weight: 500; text-align: center;
+}
+.provider-toggle .ptog:hover { border-color: var(--accent); }
+.provider-toggle .ptog.on {
+  background: rgba(79,140,255,.12); border-color: var(--accent); color: var(--accent);
+}
 
 .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
 h1 { font-size: 22px; margin: 0 0 18px; letter-spacing: -.4px; }

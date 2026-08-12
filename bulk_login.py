@@ -44,7 +44,7 @@ from urllib3.util.retry import Retry
 from requests.adapters import HTTPAdapter
 
 import db
-from xproxy_manager import XProxyManager
+from xproxy_manager import XProxyManager, make_provider
 from human_behavior import setup_account_like_real_device
 from devices import pick_device
 
@@ -89,16 +89,7 @@ class BulkLogin:
         with open(config_path, "r", encoding="utf-8") as f:
             self.config = json.load(f)
 
-        xp = self.config["xproxy"]
-        self.xproxy = XProxyManager(
-            host=xp["host"],
-            api_port=xp["api_port"],
-            proxy_type=xp.get("proxy_type", "socks5"),
-            slots=xp["slots"],
-            api_pattern=xp.get("api_pattern"),
-            username=xp.get("username"),
-            password=xp.get("password"),
-        )
+        self.xproxy = make_provider(self.config)
 
         s = self.config.get("settings", {})
         self.sessions_dir = Path(s.get("sessions_dir", "sessions"))
@@ -205,14 +196,24 @@ class BulkLogin:
             device = pick_device(username)
             cl.set_device(device)
 
-        setup_account_like_real_device(cl, proxy_url)
+        if getattr(self.xproxy, "is_direct", False):
+            # ADB 테더링 모드 — 프록시 없이 기본 라우트(테더링)로 나간다.
+            # 프록시가 없으므로 누출 검사 대신 디바이스/로케일만 세팅한다.
+            # 테더링이 집 IP가 아닌지는 run()의 preflight가 이미 확인했다.
+            cl.set_country("KR")
+            cl.set_country_code(82)
+            cl.set_locale("ko_KR")
+            cl.set_timezone_offset(9 * 3600)
+            cl.delay_range = [2, 5]
+        else:
+            setup_account_like_real_device(cl, proxy_url)
 
-        # 첫 패킷이 나가기 전 마지막 방어선.
-        # instagrapi의 set_proxy는 falsy 값을 받으면 프록시를 '해제'하므로,
-        # 세 전송 경로(private/public/graphql)가 전부 프록시를 물었는지 직접 확인한다.
-        leak = self._proxy_leak_check(cl, proxy_url)
-        if leak:
-            return db.FAILED, f"프록시 미적용 - 접속 차단: {leak}"
+            # 첫 패킷이 나가기 전 마지막 방어선.
+            # instagrapi의 set_proxy는 falsy 값을 받으면 프록시를 '해제'하므로,
+            # 세 전송 경로(private/public/graphql)가 전부 프록시를 물었는지 직접 확인한다.
+            leak = self._proxy_leak_check(cl, proxy_url)
+            if leak:
+                return db.FAILED, f"프록시 미적용 - 접속 차단: {leak}"
 
         try:
             return self._attempt(cl, acc, session_path, "")

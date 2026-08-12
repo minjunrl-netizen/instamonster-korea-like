@@ -1,20 +1,61 @@
 {
   "xproxy": {
+    "provider": "xproxy",
     "host": "192.168.0.100",
     "api_port": 8080,
     "proxy_type": "socks5",
     "api_pattern": null,
     "slots": [
-      {"port": 30001, "name": "유심01-SKT", "modem": 1},
-      {"port": 30002, "name": "유심02-KT", "modem": 2},
-      {"port": 30003, "name": "유심03-LGU", "modem": 3},
-      {"port": 30004, "name": "유심04-SKT", "modem": 4},
-      {"port": 30005, "name": "유심05-KT", "modem": 5},
-      {"port": 30006, "name": "유심06-LGU", "modem": 6},
-      {"port": 30007, "name": "유심07-SKT", "modem": 7},
-      {"port": 30008, "name": "유심08-KT", "modem": 8},
-      {"port": 30009, "name": "유심09-LGU", "modem": 9},
-      {"port": 30010, "name": "유심10-SKT", "modem": 10}
+      {
+        "port": 30001,
+        "name": "유심01-SKT",
+        "modem": 1
+      },
+      {
+        "port": 30002,
+        "name": "유심02-KT",
+        "modem": 2
+      },
+      {
+        "port": 30003,
+        "name": "유심03-LGU",
+        "modem": 3
+      },
+      {
+        "port": 30004,
+        "name": "유심04-SKT",
+        "modem": 4
+      },
+      {
+        "port": 30005,
+        "name": "유심05-KT",
+        "modem": 5
+      },
+      {
+        "port": 30006,
+        "name": "유심06-LGU",
+        "modem": 6
+      },
+      {
+        "port": 30007,
+        "name": "유심07-SKT",
+        "modem": 7
+      },
+      {
+        "port": 30008,
+        "name": "유심08-KT",
+        "modem": 8
+      },
+      {
+        "port": 30009,
+        "name": "유심09-LGU",
+        "modem": 9
+      },
+      {
+        "port": 30010,
+        "name": "유심10-SKT",
+        "modem": 10
+      }
     ]
   },
   "accounts": [
@@ -105,5 +146,10 @@
   "admin": {
     "username": "bjdlclrh",
     "password_sha256": "ee3e16303edba1ae73b8c76ea8d74c92df9f38fe951a0220a9f1bc35b23efdcc"
+  },
+  "adb": {
+    "device": "",
+    "home_ip": "",
+    "name": "ADB-테더링"
   }
 }

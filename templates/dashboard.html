@@ -58,9 +58,25 @@
   </div>
 
   <div class="card">
-    <h2>유심 슬롯 <span class="dim">({{ slots|length }}개)</span></h2>
+    <h2>IP 프로바이더 <span class="dim" id="providerMode">{{ 'ADB 테더링' if provider == 'adb' else 'xProxy 장비' }}</span></h2>
+    <div class="provider-toggle">
+      <button class="ptog {{ 'on' if provider != 'adb' }}" data-p="xproxy" onclick="setProvider('xproxy')">
+        xProxy 장비 <span class="dim">(유심 {{ slots|length }})</span>
+      </button>
+      <button class="ptog {{ 'on' if provider == 'adb' }}" data-p="adb" onclick="setProvider('adb')">
+        ADB 테더링 <span class="dim">(폰 1대)</span>
+      </button>
+    </div>
+    <p class="dim small">
+      {% if provider == 'adb' %}
+      USB로 연결한 폰 1대를 유심 슬롯 대신 사용 중. 비행기모드 토글로 IP 변경. 장비 오기 전 테스트용.
+      {% else %}
+      xProxy 하드웨어의 유심 슬롯 {{ slots|length }}개 사용. 장비 연결 후 아래에서 상태 확인.
+      {% endif %}
+    </p>
     <button class="btn sm" onclick="checkProxy()">연결 상태 확인</button>
     <div id="proxyResult" class="proxy-result"></div>
+    {% if provider != 'adb' %}
     <table class="tbl compact">
       <thead><tr><th>슬롯</th><th>포트</th><th class="num">배정 계정</th></tr></thead>
       <tbody>
@@ -73,6 +89,7 @@
       {% endfor %}
       </tbody>
     </table>
+    {% endif %}
   </div>
 </section>
 
@@ -116,6 +133,14 @@
 
 {% block script %}
 <script>
+async function setProvider(p) {
+  if (!confirm(p === 'adb'
+      ? 'ADB 테더링 모드로 전환할까? (USB 연결된 폰 1대를 유심 대신 사용)'
+      : 'xProxy 장비 모드로 전환할까?')) return;
+  const fd = new FormData(); fd.append('provider', p);
+  const r = await fetch('/api/provider', { method: 'POST', body: fd });
+  if (r.ok) location.reload(); else alert('전환 실패');
+}
 async function checkProxy() {
   const box = document.getElementById('proxyResult');
   box.className = 'proxy-result loading';

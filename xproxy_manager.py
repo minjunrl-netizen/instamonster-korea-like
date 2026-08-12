@@ -31,6 +31,8 @@ API_PATTERNS = (
 class XProxyManager:
     """xProxy 하드웨어 장비의 IP 로테이션과 프록시 관리 (스레드 세이프)"""
 
+    is_direct = False  # 슬롯마다 SOCKS5 프록시로 나감
+
     def __init__(
         self,
         host: str,
@@ -227,3 +229,33 @@ class XProxyManager:
             "offline": offline,
             "duplicate": duplicates,
         }
+
+
+def make_provider(config: dict):
+    """
+    config에 따라 xProxy 또는 ADB 테더링 프로바이더를 만든다.
+
+    xproxy.provider == "adb"  → ADBProvider (폰 1대, 테더링)
+    그 외                     → XProxyManager (하드웨어 장비)
+    """
+    xp = config.get("xproxy", {})
+    provider = str(xp.get("provider", "xproxy")).lower()
+
+    if provider == "adb":
+        from adb_provider import ADBProvider
+        adb_cfg = config.get("adb", {})
+        return ADBProvider(
+            device=adb_cfg.get("device", ""),
+            home_ip=adb_cfg.get("home_ip", ""),
+            name=adb_cfg.get("name", "ADB-테더링"),
+        )
+
+    return XProxyManager(
+        host=xp["host"],
+        api_port=xp["api_port"],
+        proxy_type=xp.get("proxy_type", "socks5"),
+        slots=xp["slots"],
+        api_pattern=xp.get("api_pattern"),
+        username=xp.get("username"),
+        password=xp.get("password"),
+    )

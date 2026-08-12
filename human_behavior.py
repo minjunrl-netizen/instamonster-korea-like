@@ -21,6 +21,22 @@ from instagrapi import Client
 logger = logging.getLogger(__name__)
 
 
+# 실제 한국인이 자주 검색/탐색하는 해시태그 (워밍업 검색용)
+KOREAN_HASHTAGS = [
+    "맛집", "여행", "카페", "일상", "데일리", "먹스타그램", "운동", "다이어트",
+    "강아지", "고양이", "패션", "ootd", "셀카", "카페투어", "홈카페", "국내여행",
+    "제주도", "부산여행", "서울맛집", "브이로그", "인테리어", "베이킹", "네일",
+    "헬스", "등산", "캠핑", "드라이브", "책스타그램", "커피", "디저트",
+]
+
+# 실제 한국인이 검색창에 치는 키워드
+KOREAN_KEYWORDS = [
+    "맛집 추천", "카페 추천", "제주도 여행", "홈트", "다이어트 식단",
+    "강아지", "고양이", "오늘의 코디", "브이로그", "레시피", "인테리어",
+    "네일아트", "헬스 운동", "캠핑", "국내 여행지",
+]
+
+
 class HumanBehavior:
     """실제 사람의 인스타그램 사용 패턴을 시뮬레이션"""
 
@@ -106,6 +122,133 @@ class HumanBehavior:
                     logger.debug(f"[{self.username}] 스토리 조회 실패 (무시): {e}")
         except Exception as e:
             logger.debug(f"[{self.username}] 스토리 트레이 실패 (무시): {e}")
+
+    # ─── 검색 / 탐색 / 프로필 훑기 (워밍업 핵심) ───
+
+    def search_hashtag_and_browse(self) -> None:
+        """
+        해시태그 검색 → 게시물 스크롤 → 몇 개 훑어보기.
+        실제 사람: '맛집' 검색 → 뜬 게시물들 구경 → 마음에 드는 것 클릭.
+        """
+        tag = random.choice(KOREAN_HASHTAGS)
+        try:
+            logger.info(f"[{self.username}] 🔍 해시태그 검색: #{tag}")
+            self.cl.search_hashtags(tag)  # 검색창에 치는 행동
+            self._human_pause(1.5, 3.5)
+
+            medias = self.cl.hashtag_medias_recent(tag, amount=random.randint(6, 15))
+            self._human_pause(2.0, 5.0)  # 결과 스크롤
+
+            # 뜬 게시물 중 몇 개 상세 조회 (구경)
+            for media in random.sample(medias, min(random.randint(2, 4), len(medias))):
+                try:
+                    pk = str(getattr(media, "pk", "")).split("_")[0]
+                    if pk.isdigit():
+                        self.cl.media_info(pk)
+                        self._human_pause(2.0, 6.0)  # 게시물 읽는 시간
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"[{self.username}] 해시태그 탐색 실패 (무시): {e}")
+
+    def search_user_and_visit(self) -> None:
+        """
+        키워드/유저 검색 → 계정 프로필 방문 → 게시물 목록 훑기.
+        실제 사람: 검색 → 관심 계정 발견 → 프로필 들어가서 게시물 구경.
+        """
+        query = random.choice(KOREAN_KEYWORDS + KOREAN_HASHTAGS)
+        try:
+            logger.info(f"[{self.username}] 🔍 검색: {query}")
+            users = self.cl.search_users(query)
+            self._human_pause(1.5, 4.0)
+            if not users:
+                return
+
+            # 검색 결과 중 한 명 프로필 방문
+            user = random.choice(users[:min(8, len(users))])
+            uid = str(getattr(user, "pk", ""))
+            if not uid:
+                return
+            self.cl.user_info(uid)  # 프로필 방문
+            self._human_pause(2.0, 5.0)
+
+            # 그 계정 게시물 목록 훑어보기
+            try:
+                medias = self.cl.user_medias(uid, amount=random.randint(3, 9))
+                self._human_pause(2.0, 6.0)
+                # 게시물 하나 상세 조회
+                if medias:
+                    m = random.choice(medias)
+                    pk = str(getattr(m, "pk", "")).split("_")[0]
+                    if pk.isdigit():
+                        self.cl.media_info(pk)
+                        self._human_pause(2.0, 5.0)
+            except Exception:
+                pass
+        except Exception as e:
+            logger.debug(f"[{self.username}] 유저 검색/방문 실패 (무시): {e}")
+
+    def watch_explore_reels(self) -> None:
+        """
+        탐색 탭 릴스 시청. 요즘 사람들이 제일 많이 하는 행동.
+        """
+        try:
+            logger.info(f"[{self.username}] 🎬 탐색 릴스 보기")
+            reels = self.cl.explore_reels(amount=random.randint(4, 10))
+            # 릴스 시청 시간 (여러 개 넘겨봄)
+            for _ in range(random.randint(2, 5)):
+                self._human_pause(3.0, 9.0)  # 릴스 하나 보는 시간
+        except Exception as e:
+            logger.debug(f"[{self.username}] 탐색 릴스 실패 (무시): {e}")
+
+    def browse_following(self) -> None:
+        """
+        내가/남이 팔로우한 사람들 목록 훑어보기.
+        실제 사람: 팔로잉 목록 보다가 한 명 프로필 들어가기.
+        """
+        try:
+            uid = str(self.cl.user_id)
+            following = self.cl.user_following(uid, amount=random.randint(5, 15))
+            self._human_pause(1.5, 4.0)
+            if not following:
+                # 팔로잉 없으면(신규계정) 검색으로 대체
+                self.search_user_and_visit()
+                return
+            # 팔로잉 중 한 명 프로필 방문
+            target = random.choice(list(following.values()))
+            tid = str(getattr(target, "pk", ""))
+            if tid:
+                self.cl.user_info(tid)
+                self._human_pause(2.0, 5.0)
+        except Exception as e:
+            logger.debug(f"[{self.username}] 팔로잉 탐색 실패 (무시): {e}")
+
+    def warmup_activity(self) -> str:
+        """
+        워밍업용 랜덤 행동 1개 실행 (사람처럼 다양하게).
+        피드/스토리만 반복하는 단조로움을 깨고 검색·탐색·프로필훑기를 섞는다.
+        """
+        action = random.choices(
+            ["hashtag", "search_user", "reels", "feed", "story", "following", "idle"],
+            weights=[20, 20, 18, 15, 12, 10, 5],
+            k=1,
+        )[0]
+
+        if action == "hashtag":
+            self.search_hashtag_and_browse()
+        elif action == "search_user":
+            self.search_user_and_visit()
+        elif action == "reels":
+            self.watch_explore_reels()
+        elif action == "feed":
+            self.browse_feed_before_like()
+        elif action == "story":
+            self.random_story_view()
+        elif action == "following":
+            self.browse_following()
+        else:
+            self._human_pause(2.0, 6.0)
+        return action
 
     @staticmethod
     def should_take_break(actions_done: int, every: int = 8, chance: float = 0.35) -> bool:

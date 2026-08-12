@@ -299,23 +299,29 @@ class WarmupStep:
         return {"phase": "졸업", "likes": 0, "feed": 2, "stories": 1, "can_post": False, "graduated": True}
 
     def run_day(self, day: int) -> dict:
-        """하루치 워밍업 실행. 수행한 행동 수를 반환."""
+        """
+        하루치 워밍업 실행. 피드/스토리만 반복하지 않고
+        검색·해시태그·탐색릴스·프로필훑기·팔로잉을 랜덤하게 섞어
+        실제 사람이 앱 쓰는 것처럼 행동한다.
+        """
         plan = self.plan_for_day(day)
-        done = {"feed_browses": 0, "story_views": 0, "likes": 0}
+        done = {"activities": 0, "likes": 0, "action_log": {}}
 
-        # 앱 켠 것처럼 피드/스토리부터
+        # 앱 켠 것처럼 피드/스토리부터 (실제 앱 시작 동작)
         self.human.simulate_app_open()
 
-        for _ in range(plan["feed"]):
-            self.human.browse_feed_before_like()
-            done["feed_browses"] += 1
-            self.human._human_pause(2.0, 5.0)
+        # 그날 행동 횟수 = 피드+스토리 계획치를 합쳐 다양한 행동으로 소비
+        activity_count = plan["feed"] + plan["stories"] + random.randint(1, 3)
+        for i in range(activity_count):
+            action = self.human.warmup_activity()  # 검색/탐색/릴스/프로필/피드/스토리 랜덤
+            done["activities"] += 1
+            done["action_log"][action] = done["action_log"].get(action, 0) + 1
+            self.human._human_pause(3.0, 8.0)
+            # 가끔 사람처럼 잠깐 쉼
+            if self.human.should_take_break(i + 1, every=5, chance=0.3):
+                self.human.take_break(20, 60)
 
-        for _ in range(plan["stories"]):
-            self.human.random_story_view()
-            done["story_views"] += 1
-
-        # 좋아요는 타임라인에서 자연스럽게 (타겟 아님 — 워밍업은 랜덤 피드에)
+        # 좋아요는 다양한 탐색 후 자연스럽게 (타겟 아님 — 워밍업은 랜덤 피드)
         if plan["likes"] > 0:
             done["likes"] = self._like_timeline(plan["likes"])
 

@@ -200,7 +200,7 @@ class WarmupEngine:
                 self.counts["warmed"] += 1
                 self._log("info",
                           f"🌱 [{username}] Day{day} {result['phase']} — "
-                          f"피드{result['feed_browses']} 스토리{result['story_views']} 좋아요{result['likes']}")
+                          f"활동 {result['activities']}회 {result.get('action_log', {})} 좋아요{result['likes']}")
 
                 # 포스팅 날이면 자동 업로드
                 if should_post_today(acc):

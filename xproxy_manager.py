@@ -25,6 +25,8 @@ API_PATTERNS = (
     "/api/changeIP/{pos}",
     "/api/rotate/{pos}",
     "/rotating?modem={pos}",
+    "/api/changeip?port={port}",
+    "/reboot?port={port}",
 )
 
 
@@ -98,7 +100,7 @@ class XProxyManager:
         patterns = [self._pattern] if self._pattern else list(API_PATTERNS)
 
         for pattern in patterns:
-            url = f"http://{self.host}:{self.api_port}{pattern.format(pos=position)}"
+            url = f"http://{self.host}:{self.api_port}{pattern.format(pos=position, port=self.slots[slot_index].get('port', ''))}"
             try:
                 resp = self._session.get(url, timeout=10)
             except requests.RequestException:

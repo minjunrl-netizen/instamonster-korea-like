@@ -164,7 +164,13 @@ python test_parallel.py     # 좋아요 엔진 9/9
 ## 남은 작업 (TODO)
 
 - [ ] 이메일 IMAP 코드 챌린지 자동 해결 핸들러 (코드 방식 챌린지용)
-- [ ] xProxy 실장비 연결 후 `test_xproxy.py`로 슬롯 검증
+- [ ] xProxy 실장비 연결 후 검증 (준비 도구 완성 2026-08-12)
+      1. `python xproxy_setup.py scan`     → 랜에서 장비 IP 찾기
+      2. config.json의 host/api_port 수정
+      3. `python xproxy_setup.py probe`    → 슬롯 포트 도달 확인
+      4. `python xproxy_setup.py apicheck` → IP 로테이션 API 경로 자동 감지 → api_pattern 채우기
+      5. `python test_xproxy.py`           → 슬롯 온라인/고유IP/누출없음/로테이션 최종 검증
+      6. 대시보드 → "xProxy 장비" 토글 → "연결 상태 확인"
 - [ ] 실 계정 구매 → `/diagnosis`로 생존율 검증 → 대량 투입
 - [x] **좋아요 엔진 ↔ DB 계정풀 연동** (완료 2026-08-12)
       - order_processor가 DB의 ready 계정을 읽음 (세션 글롭은 폴백)

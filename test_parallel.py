@@ -33,6 +33,7 @@ class FakeLedger:
     def __init__(self):
         self.lock = threading.Lock()
         self.likes: list[tuple[str, str]] = []      # (username, media_id)
+        self.like_proxies: list[tuple[str, str]] = []  # (username, proxy_url)
         self.attempts: set[str] = set()            # 좋아요를 시도한 계정
         self.concurrent = 0
         self.peak_concurrent = 0
@@ -95,6 +96,7 @@ class FakeClient:
 
             with LEDGER.lock:
                 LEDGER.likes.append((self.username, media_id))
+                LEDGER.like_proxies.append((self.username, self.proxy))
             # 실제 네트워크 왕복 대신 짧은 지연 — 스레드 겹침을 관측 가능하게
             time.sleep(0.003)
             return True
@@ -476,6 +478,132 @@ def test_real_csv_end_to_end():
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def build_db_processor(tmp: Path, account_count: int, slots: int) -> OrderProcessor:
+    """DB에 계정을 등록하고 ready 상태로 만든 뒤 프로세서를 만든다"""
+    import db as _db
+    _db.DB_PATH = tmp / "test.db"
+    _db._local = threading.local()
+    _db.init()
+
+    sessions = tmp / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+
+    recs = [{"username": f"acc{i+1:05d}", "password": "pw"} for i in range(account_count)]
+    _db.add_accounts(recs, slot_count=slots)   # 슬롯 균등 배정 + 디바이스 배정
+
+    # 전부 로그인 성공(ready)으로 만들고 세션 파일 생성
+    for r in recs:
+        u = r["username"]
+        sf = sessions / f"{u}.json"
+        sf.write_text("{}", encoding="utf-8")
+        _db.mark_login_result(u, _db.READY, str(sf))
+
+    config = {
+        "xproxy": {
+            "host": "127.0.0.1", "api_port": 8080, "proxy_type": "socks5",
+            "slots": [{"port": 30000 + i, "name": f"sim{i+1}", "modem": i + 1} for i in range(slots)],
+        },
+        "settings": {
+            "sessions_dir": str(sessions),
+            "likes_per_account": 10, "max_likes_per_post": 3000,
+            "delay_between_likes_min": 0, "delay_between_likes_max": 0,
+            "delay_between_accounts_min": 0, "delay_between_accounts_max": 0,
+            "ip_rotate_wait_seconds": 0, "human_simulation": False,
+        },
+    }
+    cfg_path = tmp / "config.json"
+    cfg_path.write_text(json.dumps(config), encoding="utf-8")
+
+    proc = OrderProcessor(str(cfg_path))
+    proc.xproxy.rotate_ip = lambda slot, wait_seconds=0: True
+    return proc, _db
+
+
+def test_db_backed_pool():
+    print("\n[10] DB 계정풀 연동 — 슬롯 고정 + likes_today 영구 기록")
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        reset_ledger()
+        proc, _db = build_db_processor(tmp, account_count=100, slots=5)
+
+        ok = True
+        ok &= check("DB 모드로 로드됨", proc.pool.db_backed, str(proc.pool.db_backed))
+        ok &= check("슬롯 5개에 균등 분배",
+                    sorted(len(proc.pool.by_slot[i]) for i in range(5)) == [20]*5,
+                    str([len(proc.pool.by_slot[i]) for i in range(5)]))
+
+        # 각 계정의 DB상 배정 슬롯 기록
+        slot_of = {}
+        for i in range(5):
+            for a in proc.pool.by_slot[i]:
+                slot_of[a["username"]] = i
+
+        orders = [{"user": "u", "link": URL.format(code=c), "quantity": 60} for c in CODES[:3]]
+        proc.load_orders_list(orders)
+        stats = proc.process_all()
+
+        ok &= check("목표 달성", stats["success"] == 180, f"성공 {stats['success']} / 목표 180")
+        ok &= check("중복 없음", len(LEDGER.likes) == len(set(LEDGER.likes)))
+
+        # ── 핵심: 계정이 자기 슬롯 포트로만 발사했는지 ──
+        mismatched = []
+        for username, proxy in LEDGER.like_proxies:
+            expected_port = 30000 + slot_of[username]
+            actual_port = int(proxy.rsplit(":", 1)[1])
+            if actual_port != expected_port:
+                mismatched.append((username, actual_port, expected_port))
+        ok &= check("계정-슬롯 고정 준수 (자기 유심으로만 발사)",
+                    not mismatched, f"{len(mismatched)}건 불일치")
+
+        # ── likes_today가 DB에 기록됐는지 ──
+        rows, _ = _db.list_accounts(limit=1000)
+        used = {r["username"]: r["likes_today"] for r in rows}
+        total_recorded = sum(used.values())
+        ok &= check("likes_today DB 기록 = 발사 수",
+                    total_recorded == 180, f"DB기록 {total_recorded} / 발사 180")
+        ok &= check("계정당 한도(10) 초과 없음",
+                    max(used.values()) <= 10, f"최대 {max(used.values())}")
+
+        # ── 재시작해도 카운터 유지: 새 풀 만들면 used_count가 DB값부터 시작 ──
+        from order_processor import AccountPool
+        pool2 = AccountPool(str(tmp / "sessions"), max_daily_use=10, slot_count=5)
+        restart_used = sum(a["used_count"] for a in pool2.accounts)
+        ok &= check("재시작 후 카운터 유지 (DB에서 복원)",
+                    restart_used == 180, f"복원된 사용량 {restart_used}")
+        return ok
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def test_db_slot_pinning_isolation():
+    print("\n[11] DB 모드 — 죽은 계정 발사 시 DB 상태 banned 갱신")
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        reset_ledger()
+        proc, _db = build_db_processor(tmp, account_count=50, slots=5)
+
+        # 특정 계정이 발사 때 스팸(밴) 예외를 던지게
+        banned_targets = {a["username"] for i in range(5) for a in proc.pool.by_slot[i][:1]}
+        LEDGER.burn_users = set(banned_targets)
+
+        orders = [{"user": "u", "link": URL.format(code=CODES[0]), "quantity": 45}]
+        proc.load_orders_list(orders)
+        proc.process_all()
+
+        rows, _ = _db.list_accounts(status="banned", limit=100)
+        banned_in_db = {r["username"] for r in rows}
+
+        ok = True
+        ok &= check("밴 계정 좋아요 0건",
+                    not ({u for u, _ in LEDGER.likes} & banned_targets))
+        ok &= check("밴 계정 DB 상태 banned로 갱신",
+                    banned_targets <= banned_in_db,
+                    f"밴 대상 {len(banned_targets)} / DB banned {len(banned_in_db)}")
+        return ok
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     import logging
     logging.disable(logging.CRITICAL)
@@ -492,6 +620,8 @@ if __name__ == "__main__":
         test_dead_media(),
         test_human_simulation_on(),
         test_csv_and_cap(),
+        test_db_backed_pool(),
+        test_db_slot_pinning_isolation(),
         test_real_panel_hazards(),
         test_real_csv_end_to_end(),
     ]

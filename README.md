@@ -166,7 +166,12 @@ python test_parallel.py     # 좋아요 엔진 9/9
 - [ ] 이메일 IMAP 코드 챌린지 자동 해결 핸들러 (코드 방식 챌린지용)
 - [ ] xProxy 실장비 연결 후 `test_xproxy.py`로 슬롯 검증
 - [ ] 실 계정 구매 → `/diagnosis`로 생존율 검증 → 대량 투입
-- [ ] 좋아요 엔진과 DB 계정풀 연동 (현재 order_processor는 sessions/ 글롭)
+- [x] **좋아요 엔진 ↔ DB 계정풀 연동** (완료 2026-08-12)
+      - order_processor가 DB의 ready 계정을 읽음 (세션 글롭은 폴백)
+      - 계정이 고정된 proxy_slot으로만 발사 → 계정-IP 대역 일관성
+      - likes_today를 DB에 영구 기록 → 재시작해도 일일 한도 유지
+      - 밴/스팸 감지 시 DB 상태를 banned로 자동 갱신
+      - 검증: test_parallel [10][11] (슬롯고정/카운터영구/밴갱신)
 
 ## 보안 주의
 

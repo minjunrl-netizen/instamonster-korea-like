@@ -39,6 +39,7 @@ from instagrapi.exceptions import (
 
 from xproxy_manager import XProxyManager
 from human_behavior import HumanBehavior
+import db
 
 logger = logging.getLogger(__name__)
 
@@ -96,56 +97,92 @@ class MediaTask:
 
 
 class AccountPool:
-    """세션 파일 기반 계정 풀 (스레드 세이프)"""
+    """
+    계정 풀 — DB 우선, 세션 글롭 폴백 (스레드 세이프).
 
-    def __init__(self, sessions_dir: str = "sessions", max_daily_use: int = 10):
+    DB 모드 (실전):
+      - db.ready_accounts()로 로그인 성공(ready) 계정만 로드
+      - 계정에 고정된 proxy_slot으로 슬롯별 버킷에 배치 → 계정-IP 대역 고정
+      - likes_today를 DB에 영구 기록 → 재시작해도 일일 한도 유지
+      - 밴/스팸 감지 시 DB 상태를 banned로 갱신
+
+    세션 글롭 모드 (테스트/레거시):
+      - sessions/*.json을 읽고 username 해시로 슬롯 배정
+    """
+
+    def __init__(self, sessions_dir: str = "sessions", max_daily_use: int = 10,
+                 slot_count: int = 1):
         self.sessions_dir = Path(sessions_dir)
         self.max_daily_use = max_daily_use
-        self.accounts: list[dict] = []
+        self.slot_count = max(slot_count, 1)
+        self.db_backed = False
+        self.by_slot: dict[int, list[dict]] = {i: [] for i in range(self.slot_count)}
+        self._cursor: dict[int, int] = {i: 0 for i in range(self.slot_count)}
         self._lock = threading.Lock()
-        self._cursor = 0
-        self._load_sessions()
+        self._load()
 
-    def _load_sessions(self) -> None:
-        """세션 디렉토리에서 사용 가능한 계정 로드"""
-        if not self.sessions_dir.exists():
-            logger.error(f"세션 디렉토리 없음: {self.sessions_dir}")
+    def _add(self, username: str, session_file: str, slot, device_model, used: int) -> None:
+        if slot is None or not (0 <= slot < self.slot_count):
+            slot = hash(username) % self.slot_count
+        self.by_slot[slot].append({
+            "username": username,
+            "session_file": session_file,
+            "proxy_slot": slot,
+            "device_model": device_model,
+            "used_count": used,          # DB 모드면 오늘 이미 누른 수부터 시작
+            "in_use": False,
+            "cooldown_until": 0.0,
+            "burned": False,
+        })
+
+    def _load(self) -> None:
+        rows = []
+        try:
+            rows = db.ready_accounts(self.max_daily_use)
+        except Exception as e:
+            logger.debug(f"DB 계정 조회 실패, 세션 글롭으로 폴백: {e}")
+            rows = []
+
+        if rows:
+            self.db_backed = True
+            for r in rows:
+                session_file = r.get("session_file") or str(self.sessions_dir / f"{r['username']}.json")
+                self._add(r["username"], session_file, r.get("proxy_slot"),
+                          r.get("device_model"), int(r.get("likes_today", 0) or 0))
+            dist = [len(self.by_slot[i]) for i in range(self.slot_count)]
+            logger.info(
+                f"계정 풀(DB): {sum(dist):,}개 로드, 슬롯별 분포 {dist} "
+                f"(계정당 하루 {self.max_daily_use}개)"
+            )
             return
 
-        for f in sorted(self.sessions_dir.glob("*.json")):
-            self.accounts.append({
-                "session_file": str(f),
-                "username": f.stem,     # acc1.json → acc1
-                "used_count": 0,
-                "burned": False,        # 밴/챌린지 → 영구 제외
-                "cooldown_until": 0.0,  # 레이트리밋 → 일시 제외
-                "in_use": False,
-            })
+        # ── 세션 글롭 폴백 ──
+        if self.sessions_dir.exists():
+            for f in sorted(self.sessions_dir.glob("*.json")):
+                self._add(f.stem, str(f), None, None, 0)
+        total = sum(len(b) for b in self.by_slot.values())
+        logger.info(f"계정 풀(세션): {total:,}개 로드 (계정당 하루 {self.max_daily_use}개)")
 
-        logger.info(f"계정 풀: {len(self.accounts)}개 로드 (계정당 하루 {self.max_daily_use}개 좋아요)")
-
-    def claim(self) -> dict | None:
+    def claim(self, slot_index: int) -> dict | None:
         """
-        사용 가능한 계정 1개를 원자적으로 점유한다.
-        풀 전체를 한 바퀴 돌아도 없으면 None.
+        지정한 슬롯에 배정된 계정만 원자적으로 점유한다.
+        계정은 자기 유심 슬롯으로만 나간다 → 계정-IP 대역 일관성.
         """
         now = time.time()
-        total = len(self.accounts)
-        if total == 0:
-            return None
-
         with self._lock:
-            for _ in range(total):
-                acc = self.accounts[self._cursor % total]
-                self._cursor += 1
-
+            bucket = self.by_slot.get(slot_index, [])
+            n = len(bucket)
+            if n == 0:
+                return None
+            for _ in range(n):
+                acc = bucket[self._cursor[slot_index] % n]
+                self._cursor[slot_index] += 1
                 if acc["burned"] or acc["in_use"]:
                     continue
                 if acc["used_count"] >= self.max_daily_use:
                     continue
                 if acc["cooldown_until"] > now:
                     continue
-
                 acc["in_use"] = True
                 return acc
         return None
@@ -154,34 +191,51 @@ class AccountPool:
         with self._lock:
             acc["used_count"] += likes_done
             acc["in_use"] = False
+        if likes_done and self.db_backed:
+            try:
+                db.bump_likes(acc["username"], likes_done)   # 일일 카운터 영구 기록
+            except Exception as e:
+                logger.warning(f"likes_today 기록 실패 [{acc['username']}]: {e}")
 
-    def burn(self, acc: dict) -> None:
-        """밴/챌린지 계정 영구 제외"""
+    def burn(self, acc: dict, reason: str = "") -> None:
+        """밴/스팸/세션손상 계정 영구 제외 + DB 상태 갱신"""
         with self._lock:
             acc["burned"] = True
             acc["in_use"] = False
+        if self.db_backed:
+            try:
+                db.set_status(acc["username"], db.BANNED, reason or "발사 중 밴/스팸 감지")
+            except Exception as e:
+                logger.warning(f"밴 상태 기록 실패 [{acc['username']}]: {e}")
 
     def cooldown(self, acc: dict, seconds: float = 900.0) -> None:
-        """레이트리밋 계정 일시 제외"""
+        """레이트리밋 계정 일시 제외 (일시적이라 DB 반영 안 함)"""
         with self._lock:
             acc["cooldown_until"] = time.time() + seconds
             acc["in_use"] = False
 
-    @property
-    def available_count(self) -> int:
+    def slot_available(self, slot_index: int) -> int:
         now = time.time()
         with self._lock:
             return sum(
-                1 for a in self.accounts
+                1 for a in self.by_slot.get(slot_index, [])
                 if not a["burned"]
                 and a["used_count"] < self.max_daily_use
                 and a["cooldown_until"] <= now
             )
 
     @property
+    def accounts(self) -> list[dict]:
+        return [a for b in self.by_slot.values() for a in b]
+
+    @property
+    def available_count(self) -> int:
+        return sum(self.slot_available(i) for i in range(self.slot_count))
+
+    @property
     def burned_count(self) -> int:
         with self._lock:
-            return sum(1 for a in self.accounts if a["burned"])
+            return sum(1 for b in self.by_slot.values() for a in b if a["burned"])
 
 
 class OrderProcessor:
@@ -217,6 +271,7 @@ class OrderProcessor:
         self.pool = AccountPool(
             settings.get("sessions_dir", "sessions"),
             max_daily_use=self.likes_per_account,
+            slot_count=len(self.xproxy.slots),
         )
 
         self.orders: list[Order] = []
@@ -225,8 +280,6 @@ class OrderProcessor:
         self._task_lock = threading.Lock()
         self._stats_lock = threading.Lock()
         self._stop = threading.Event()
-        self._exhausted = threading.Event()
-        self._idle_streak = 0
         self.stats = {"success": 0, "fail": 0, "total_needed": 0, "accounts_used": 0}
 
     # ─── 주문 읽기 ───
@@ -421,7 +474,13 @@ class OrderProcessor:
         조회 전용 클라이언트 (좋아요 소모 없이 세션만 빌려 쓴다).
         media_id 해석, 타겟 게시물 수집 등에 사용한다.
         """
-        acc = self.pool.claim()
+        # 조회용은 어느 슬롯이든 상관없다 — 사용 가능한 계정을 슬롯 순회로 찾는다
+        acc = None
+        for s in range(self.pool.slot_count):
+            acc = self.pool.claim(s)
+            if acc is not None:
+                slot_index = s
+                break
         if acc is None:
             logger.warning("조회용 계정 없음")
             return None
@@ -486,18 +545,6 @@ class OrderProcessor:
         with self._stats_lock:
             self.stats[key] += n
 
-    def _note_idle(self) -> bool:
-        """
-        계정을 하나 받았는데 배정할 게시물이 없었다.
-        모든 워커를 통틀어 풀 전체를 한 바퀴 돌 만큼 헛돌면 고갈로 판정한다.
-        """
-        with self._stats_lock:
-            self._idle_streak += 1
-            return self._idle_streak >= max(len(self.pool.accounts), 1)
-
-    def _reset_idle(self) -> None:
-        with self._stats_lock:
-            self._idle_streak = 0
 
     # ─── 워커 ───
 
@@ -508,14 +555,17 @@ class OrderProcessor:
         """
         slot_name = self.xproxy.slots[slot_index].get("name", f"slot-{slot_index}")
 
-        while not self._stop.is_set() and not self._exhausted.is_set():
+        idle = 0
+
+        while not self._stop.is_set():
             if not self._work_remaining():
                 break
 
-            acc = self.pool.claim()
+            # 이 슬롯에 배정된 계정만 가져온다 → 계정은 자기 유심으로만 나감
+            acc = self.pool.claim(slot_index)
             if acc is None:
-                logger.warning(f"[{slot_name}] 사용 가능한 계정 없음 - 워커 종료")
-                self._exhausted.set()
+                # 이 슬롯 계정이 소진됨 — 이 워커만 종료 (다른 슬롯은 계속)
+                logger.info(f"[{slot_name}] 이 슬롯 계정 소진 - 워커 종료")
                 break
 
             username = acc["username"]
@@ -526,17 +576,15 @@ class OrderProcessor:
                 self.pool.release(acc, likes_done=0)
                 if not self._work_remaining():
                     break
-                # 이 계정은 남은 게시물을 전부 이미 눌렀음 → 다음 계정으로.
-                # 풀을 한 바퀴 다 돌아도 배정될 게 없으면 계정이 고갈된 것이다.
-                if self._note_idle():
-                    logger.warning(
-                        f"[{slot_name}] 남은 게시물을 처리할 계정이 없음 - 워커 종료"
-                    )
-                    self._exhausted.set()
+                # 이 계정은 남은 게시물을 이미 다 눌렀음 → 다음 계정으로.
+                # 이 슬롯 계정들을 한 바퀴 다 돌아도 배정될 게 없으면 종료.
+                idle += 1
+                if idle > self.pool.slot_available(slot_index):
+                    logger.info(f"[{slot_name}] 남은 게시물을 처리할 계정 없음 - 워커 종료")
                     break
                 continue
 
-            self._reset_idle()
+            idle = 0
 
             # IP 로테이션 (계정 교체 시점에 1회)
             self.xproxy.rotate_ip(slot_index, wait_seconds=self.rotate_wait)
@@ -546,7 +594,7 @@ class OrderProcessor:
             if client is None:
                 for task in tasks:
                     self._rollback(task, username)
-                self.pool.burn(acc)
+                self.pool.burn(acc, "세션 로드 실패")
                 self._bump("fail", len(tasks))
                 continue
 
@@ -606,7 +654,7 @@ class OrderProcessor:
                 self._rollback(task, username)
                 for rest in tasks[i + 1:]:
                     self._rollback(rest, username)
-                self.pool.burn(acc)
+                self.pool.burn(acc, f"발사 중 {type(e).__name__}")
                 self._bump("fail")
                 return done
             except COOLDOWN_EXCEPTIONS:
@@ -665,8 +713,6 @@ class OrderProcessor:
         """전체 주문 병렬 처리"""
         start_time = time.time()
         self.stats = {"success": 0, "fail": 0, "total_needed": 0, "accounts_used": 0}
-        self._exhausted.clear()
-        self._idle_streak = 0
 
         self._build_media_tasks()
         if not self.media_tasks:

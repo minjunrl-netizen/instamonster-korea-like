@@ -227,6 +227,12 @@ def do_signout(request: Request):
 
 
 @app.get("/", response_class=HTMLResponse)
+def page_home(request: Request):
+    """메인 = 올인원 컨트롤 패널"""
+    return templates.TemplateResponse("panel.html", {"request": request})
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
 def page_dashboard(request: Request):
     cfg = load_config()
     return templates.TemplateResponse("dashboard.html", {
@@ -761,6 +767,71 @@ def _start_background_schedulers():
     logger.info(
         f"백그라운드 자동화 시작 — 워밍업 매일 {warmup_hours[0]}~{warmup_hours[1]}시 랜덤 / "
         f"모니터 {monitor_interval}시간마다")
+
+
+# ─────────────────────── API: 올인원 패널 ───────────────────────
+
+@app.get("/api/panel/data")
+def api_panel_data():
+    """패널 한 화면에 필요한 모든 데이터 (계정표 + 통계 + 현재행동)"""
+    import activity
+    cfg = load_config()
+    slots = cfg.get("xproxy", {}).get("slots", [])
+    slot_names = {i: s.get("name", f"slot-{i}") for i, s in enumerate(slots)}
+    current = activity.current()
+
+    rows = db.connect().execute(
+        "SELECT username, password, status, proxy_slot, totp_seed, warmup_day, "
+        "health_status, age_class, follower_count, media_count, email "
+        "FROM accounts ORDER BY created_at, username"
+    ).fetchall()
+
+    accounts = []
+    for i, r in enumerate(rows, 1):
+        u = r["username"]
+        act = current.get(u)
+        accounts.append({
+            "n": i,
+            "username": u,
+            "password": r["password"],
+            "status": r["status"],
+            "slot": r["proxy_slot"],
+            "slot_name": slot_names.get(r["proxy_slot"], f"슬롯{r['proxy_slot']}"),
+            "has_2fa": bool(r["totp_seed"]),
+            "warmup_day": r["warmup_day"],
+            "health": r["health_status"] or "",
+            "age_class": r["age_class"] or "",
+            "follower": r["follower_count"],
+            "media": r["media_count"],
+            "email": r["email"] or "",
+            "current": (act["action"] + (" · " + act["detail"] if act.get("detail") else "")) if act else "",
+        })
+
+    return {
+        "stats": db.stats(),
+        "provider": cfg.get("xproxy", {}).get("provider", "xproxy"),
+        "accounts": accounts,
+        "warmup_running": warmup_runner.busy,
+        "monitor_running": monitor_runner.busy,
+        "login_running": runner.busy,
+    }
+
+
+@app.post("/api/account/{username}/set-password")
+def api_set_password(username: str, password: str = Form(...)):
+    """저장된 로그인 비밀번호 수정 (bad_pw 계정 정정용)"""
+    acc = db.get_account(username)
+    if not acc:
+        raise HTTPException(404, "계정 없음")
+    with db.tx() as conn:
+        conn.execute("UPDATE accounts SET password=?, updated_at=? WHERE username=?",
+                     (password, db._now(), username))
+    return {"ok": True}
+
+
+@app.get("/panel", response_class=HTMLResponse)
+def page_panel(request: Request):
+    return templates.TemplateResponse("panel.html", {"request": request})
 
 
 if __name__ == "__main__":

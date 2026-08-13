@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>인스타몬스터 · 컨트롤 패널</title>
+<link rel="stylesheet" href="/static/app.css">
+<style>
+  body { margin: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  .pnl-top { display: flex; align-items: center; gap: 14px; padding: 8px 14px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .pnl-top .brand { font-weight: 700; font-size: 15px; color: var(--accent); }
+  .pnl-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .pnl-chips .c { font-size: 12px; padding: 3px 9px; border-radius: 20px; background: var(--panel2); }
+  .pnl-chips .c b { font-size: 13px; }
+  .pnl-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-left: auto; }
+  .pnl-actions button { padding: 6px 11px; font-size: 12px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--panel2); color: var(--text); cursor: pointer; font-weight: 500; }
+  .pnl-actions button:hover { border-color: var(--accent); }
+  .pnl-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .pnl-actions button.danger:hover { border-color: var(--err); color: var(--err); }
+
+  .pnl-bulk { display: flex; align-items: center; gap: 8px; padding: 6px 14px;
+    background: var(--panel2); border-bottom: 1px solid var(--line); font-size: 12px; }
+  .pnl-bulk button { padding: 5px 10px; font-size: 12px; border-radius: 5px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); cursor: pointer; }
+  .pnl-bulk button:hover { border-color: var(--accent); }
+
+  .pnl-table-wrap { flex: 1; overflow: auto; }
+  table.acc { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.acc thead th { position: sticky; top: 0; background: var(--panel2); color: var(--dim);
+    text-align: left; padding: 7px 8px; font-size: 11px; font-weight: 600; border-bottom: 1px solid var(--line); white-space: nowrap; z-index: 1; }
+  table.acc td { padding: 5px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.acc tbody tr:hover { background: rgba(255,255,255,.03); }
+  table.acc tbody tr.sel { background: rgba(79,140,255,.08); }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .dot.new { background: #6b7280; }
+  .dot.ready { background: #35c48a; }
+  .dot.warming { background: #f0a83c; }
+  .dot.challenge { background: #ff7a45; }
+  .dot.\32 fa { background: #4f8cff; }
+  .dot.bad_pw { background: #f2564d; }
+  .dot.banned { background: #7a1f1f; }
+  .dot.not_exist { background: #3a3a3a; }
+  .dot.rate_limit { background: #9a86ff; }
+  .dot.failed { background: #c98a2b; }
+  .pw-cell { font-family: ui-monospace, monospace; cursor: pointer; border-radius: 4px; padding: 2px 5px; }
+  .pw-cell:hover { background: rgba(79,140,255,.12); outline: 1px dashed var(--accent); }
+  .pw-cell input { width: 130px; font: inherit; background: var(--bg); color: var(--text); border: 1px solid var(--accent); border-radius: 4px; padding: 2px 5px; }
+  .cur-act { color: var(--accent); font-weight: 500; }
+  .row-act { background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 4px; cursor: pointer; padding: 2px 6px; font-size: 11px; }
+  .row-act:hover { border-color: var(--accent); color: var(--text); }
+  .badge2fa { font-size: 10px; padding: 1px 5px; border-radius: 3px; background: rgba(53,196,138,.15); color: var(--ok); }
+
+  .pnl-log { height: 190px; display: flex; border-top: 1px solid var(--line); }
+  .pnl-log .col { flex: 1; overflow: auto; padding: 8px 12px; font-family: ui-monospace, monospace; font-size: 11.5px; line-height: 1.7; }
+  .pnl-log .col.left { border-right: 1px solid var(--line); }
+  .pnl-log .lh { color: var(--dim); font-size: 11px; margin-bottom: 4px; font-family: var(--font); }
+
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .modal-bg.on { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; width: 560px; max-width: 92vw; }
+  .modal h3 { margin: 0 0 12px; }
+  .modal textarea { width: 100%; height: 180px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .modal .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+</style>
+</head>
+<body>
+
+<!-- 상단 바 -->
+<div class="pnl-top">
+  <span class="brand">인스타몬스터</span>
+  <div class="pnl-chips" id="chips"></div>
+  <div class="pnl-actions">
+    <button onclick="openAdd()">+ 계정추가</button>
+    <button class="primary" onclick="doLogin()">로그인</button>
+    <button onclick="doWarmup()">워밍업</button>
+    <button onclick="doMonitor()">헬스체크</button>
+    <button onclick="checkProxy()">유심상태</button>
+    <a href="/diagnosis"><button>진단</button></a>
+    <a href="/signout"><button>로그아웃</button></a>
+  </div>
+</div>
+
+<!-- 벌크 액션 바 -->
+<div class="pnl-bulk">
+  <label><input type="checkbox" id="selAll" onchange="toggleAll(this)"> 전체선택</label>
+  <span id="selCount" class="dim">0개 선택</span>
+  <span style="flex:1"></span>
+  <button onclick="bulkLogin()">선택 로그인</button>
+  <button onclick="bulkReset()">선택 초기화</button>
+  <button onclick="bulkDelete()">선택 삭제</button>
+  <span id="proxyBrief" class="dim"></span>
+</div>
+
+<!-- 계정 표 -->
+<div class="pnl-table-wrap">
+  <table class="acc">
+    <thead>
+      <tr>
+        <th style="width:28px"></th>
+        <th style="width:36px">#</th>
+        <th>아이디</th>
+        <th>비밀번호 <span class="dim">(클릭수정)</span></th>
+        <th style="width:90px">상태</th>
+        <th>슬롯/통신사</th>
+        <th style="width:44px">2FA</th>
+        <th style="width:44px">Day</th>
+        <th style="width:70px">헬스</th>
+        <th style="width:60px">팔로워</th>
+        <th>현재 행동</th>
+        <th style="width:130px">액션</th>
+      </tr>
+    </thead>
+    <tbody id="accBody">
+      <tr><td colspan="12" class="dim" style="padding:20px;text-align:center">불러오는 중...</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- 하단 실시간 로그 -->
+<div class="pnl-log">
+  <div class="col left">
+    <div class="lh">📡 실시간 활동 (계정이 지금 뭐 하는지)</div>
+    <div id="logActivity"></div>
+  </div>
+  <div class="col">
+    <div class="lh">🚨 상태 알림 (헬스/오류)</div>
+    <div id="logAlerts"></div>
+  </div>
+</div>
+
+<!-- 계정 추가 모달 -->
+<div class="modal-bg" id="addModal">
+  <div class="modal">
+    <h3>계정 추가</h3>
+    <p class="dim small">한 줄에 하나씩. <code>아이디 비번 2FA시드</code> (탭/공백 구분)</p>
+    <textarea id="addText" placeholder="acc1  pass1  JBSWY3DPEHPK3PXP&#10;acc2  pass2  ..."></textarea>
+    <div id="addResult" class="result"></div>
+    <div class="row">
+      <button onclick="closeAdd()">취소</button>
+      <button class="primary" onclick="submitAdd()" style="padding:6px 14px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer">등록</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const LABEL = { new:'미로그인', ready:'준비완료', warming:'워밍업', challenge:'계정오류', '2fa':'2FA', bad_pw:'비번오류', banned:'밴', not_exist:'삭제됨', rate_limit:'제한', failed:'실패' };
+const HLABEL = { alive:'정상', session_expired:'세션만료', challenge:'챌린지', banned:'밴', not_exist:'삭제', rate_limit:'제한', error:'오류' };
+let _selected = new Set();
+let _lastAct = 0;
+
+function t(iso){ try { return new Date(iso).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); } catch(e){ return ''; } }
+
+async function refresh() {
+  try {
+    const d = await (await fetch('/api/panel/data')).json();
+    // 칩 통계
+    const s = d.stats, bs = s.by_status || {};
+    document.getElementById('chips').innerHTML =
+      `<span class="c">전체 <b>${s.total}</b></span>` +
+      `<span class="c" style="color:#35c48a">준비 <b>${bs.ready||0}</b></span>` +
+      `<span class="c" style="color:#f0a83c">워밍업 <b>${bs.warming||0}</b></span>` +
+      `<span class="c" style="color:#f2564d">비번오류 <b>${bs.bad_pw||0}</b></span>` +
+      `<span class="c" style="color:#ff7a45">계정오류 <b>${bs.challenge||0}</b></span>` +
+      `<span class="c">오늘좋아요 <b>${s.likes_today||0}</b></span>` +
+      (d.warmup_running?'<span class="c" style="color:#35c48a">🌱워밍업중</span>':'') +
+      (d.monitor_running?'<span class="c" style="color:#9a86ff">❤️점검중</span>':'') +
+      (d.login_running?'<span class="c" style="color:#4f8cff">🔑로그인중</span>':'');
+
+    // 계정 표
+    const body = document.getElementById('accBody');
+    body.innerHTML = d.accounts.map(a => {
+      const checked = _selected.has(a.username) ? 'checked' : '';
+      const selCls = _selected.has(a.username) ? 'sel' : '';
+      const dotCls = a.status.replace(/[^a-z0-9_]/g,'');
+      return `<tr class="${selCls}" data-u="${a.username}">
+        <td><input type="checkbox" ${checked} onchange="toggleOne('${a.username}',this)"></td>
+        <td class="dim">${a.n}</td>
+        <td><b>${a.username}</b></td>
+        <td><span class="pw-cell" onclick="editPw(this,'${a.username}')">${a.password}</span></td>
+        <td><span class="dot ${dotCls}"></span>${LABEL[a.status]||a.status}</td>
+        <td class="dim">${a.slot_name}</td>
+        <td>${a.has_2fa?'<span class="badge2fa">2FA</span>':'<span class="dim">-</span>'}</td>
+        <td class="dim">${a.status==='warming'?a.warmup_day:'-'}</td>
+        <td class="dim">${a.health?(HLABEL[a.health]||a.health):'-'}</td>
+        <td class="dim">${a.follower!=null?a.follower:'-'}</td>
+        <td class="cur-act">${a.current||''}</td>
+        <td>
+          <button class="row-act" onclick="location.href='/account/${a.username}'">관리</button>
+          <button class="row-act" onclick="changeUsername('${a.username}')">아이디</button>
+        </td>
+      </tr>`;
+    }).join('');
+    document.getElementById('selCount').textContent = _selected.size + '개 선택';
+  } catch(e) {}
+}
+
+// 비번 인라인 수정
+function editPw(el, username) {
+  const old = el.textContent;
+  el.innerHTML = `<input value="${old}" onblur="savePw(this,'${username}','${old}')" onkeydown="if(event.key==='Enter')this.blur();if(event.key==='Escape'){this.value='${old}';this.blur();}">`;
+  el.querySelector('input').focus();
+  el.onclick = null;
+}
+async function savePw(inp, username, old) {
+  const val = inp.value.trim();
+  const cell = inp.parentElement;
+  if (val === old || !val) { cell.textContent = old; cell.onclick = () => editPw(cell, username); return; }
+  const fd = new FormData(); fd.append('password', val);
+  try {
+    const r = await fetch(`/api/account/${username}/set-password`, { method:'POST', body:fd });
+    cell.textContent = r.ok ? val : old;
+  } catch(e) { cell.textContent = old; }
+  cell.onclick = () => editPw(cell, username);
+}
+
+// 선택
+function toggleOne(u, cb) { cb.checked ? _selected.add(u) : _selected.delete(u); document.getElementById('selCount').textContent = _selected.size+'개 선택'; cb.closest('tr').classList.toggle('sel', cb.checked); }
+function toggleAll(cb) {
+  document.querySelectorAll('#accBody tr').forEach(tr => {
+    const u = tr.dataset.u; if(!u) return;
+    cb.checked ? _selected.add(u) : _selected.delete(u);
+    const c = tr.querySelector('input[type=checkbox]'); if(c) c.checked = cb.checked;
+    tr.classList.toggle('sel', cb.checked);
+  });
+  document.getElementById('selCount').textContent = _selected.size+'개 선택';
+}
+
+// 액션
+async function doLogin() {
+  if (!confirm('미로그인/실패 계정을 로그인할까?')) return;
+  const fd = new FormData(); fd.append('scope','retryable'); fd.append('limit','0');
+  const r = await fetch('/api/login/start', { method:'POST', body:fd });
+  const d = await r.json();
+  if (r.ok) alert('로그인 시작 (작업 #'+d.job_id+')'); else alert(d.detail||'실패');
+}
+async function doWarmup() {
+  const r = await fetch('/api/warmup/start', { method:'POST' });
+  const d = await r.json(); alert(r.ok?'워밍업 시작':(d.detail||'실패'));
+}
+async function doMonitor() {
+  const r = await fetch('/api/monitor/run', { method:'POST' });
+  const d = await r.json(); alert(r.ok?'헬스체크 시작':(d.detail||'실패'));
+}
+async function checkProxy() {
+  document.getElementById('proxyBrief').textContent = '유심 확인중...';
+  const d = await (await fetch('/api/xproxy/health')).json();
+  const on = d.online||0, tot = d.total||0;
+  document.getElementById('proxyBrief').textContent = `유심 ${on}/${tot} 온라인` + (d.safe?' ✅':' ⚠️');
+}
+async function bulkLogin() {
+  if (!_selected.size) return alert('선택된 계정 없음');
+  alert('선택 로그인은 전체 로그인(미로그인+실패)으로 실행됩니다');
+  doLogin();
+}
+async function bulkReset() {
+  if (!_selected.size) return alert('선택된 계정 없음');
+  if (!confirm(_selected.size+'개를 미로그인 상태로 초기화?')) return;
+  const fd = new FormData(); [..._selected].forEach(u=>fd.append('usernames',u));
+  await fetch('/api/accounts/reset', { method:'POST', body:fd });
+  _selected.clear(); refresh();
+}
+async function bulkDelete() {
+  if (!_selected.size) return alert('선택된 계정 없음');
+  if (!confirm(_selected.size+'개를 완전 삭제? (되돌릴 수 없음)')) return;
+  const fd = new FormData(); [..._selected].forEach(u=>fd.append('usernames',u));
+  await fetch('/api/accounts/delete', { method:'POST', body:fd });
+  _selected.clear(); refresh();
+}
+async function changeUsername(username) {
+  const nu = prompt(`${username}의 새 인스타 아이디 (@없이):`);
+  if (!nu) return;
+  const fd = new FormData(); fd.append('new_username', nu.trim());
+  const r = await fetch(`/api/account/${username}/profile`, { method:'POST', body:fd });
+  const d = await r.json();
+  alert(JSON.stringify(d.result||d));
+  refresh();
+}
+
+// 계정 추가 모달
+function openAdd(){ document.getElementById('addModal').classList.add('on'); }
+function closeAdd(){ document.getElementById('addModal').classList.remove('on'); }
+async function submitAdd() {
+  const box = document.getElementById('addResult');
+  const fd = new FormData(); fd.append('text', document.getElementById('addText').value);
+  box.className='result loading'; box.textContent='등록중...';
+  try {
+    const r = await fetch('/api/accounts/import', { method:'POST', body:fd });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail||'실패');
+    box.className='result ok'; box.innerHTML = `인식 <b>${d.parsed}</b> → 신규 <b>${d.added}</b> / 갱신 <b>${d.updated}</b>`;
+    document.getElementById('addText').value=''; refresh();
+    setTimeout(closeAdd, 1200);
+  } catch(e){ box.className='result err'; box.textContent=e.message; }
+}
+
+// 실시간 활동 로그
+async function pollActivity() {
+  try {
+    const d = await (await fetch('/api/activity/recent?since='+_lastAct)).json();
+    if (d.events && d.events.length) {
+      _lastAct = d.last_id;
+      const KC = { search:'#4f8cff', warmup:'#35c48a', like:'#f0a83c', monitor:'#9a86ff', done:'#35c48a', error:'#f2564d' };
+      const actEl = document.getElementById('logActivity');
+      const alertEl = document.getElementById('logAlerts');
+      d.events.reverse().forEach(e => {
+        const c = KC[e.kind]||'#8a93a6';
+        const html = `<div><span class="dim">${t(e.time)}</span> <b>${e.account}</b> <span style="color:${c}">${e.action}</span> ${e.detail||''}</div>`;
+        if (e.kind==='error' || e.kind==='monitor') alertEl.insertAdjacentHTML('afterbegin', html);
+        actEl.insertAdjacentHTML('afterbegin', html);
+      });
+      while (actEl.children.length>80) actEl.removeChild(actEl.lastChild);
+      while (alertEl.children.length>50) alertEl.removeChild(alertEl.lastChild);
+    }
+  } catch(e){}
+}
+
+refresh(); setInterval(refresh, 2500);
+pollActivity(); setInterval(pollActivity, 1500);
+checkProxy();
+</script>
+</body>
+</html>

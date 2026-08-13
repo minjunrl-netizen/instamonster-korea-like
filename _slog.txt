@@ -1,0 +1,28 @@
+15:23:47 [INFO] 서버 준비 완료 → http://localhost:8000
+15:23:47 [INFO] 백그라운드 자동화 시작 — 워밍업 매일 9~22시 랜덤 / 모니터 3.0시간마다
+15:23:47 [INFO] =======================================================
+15:23:47 [INFO]   자동 워밍업 스케줄러 시작
+15:23:47 [INFO]   매일 9시~22시 사이 랜덤 시간에 실행
+15:23:47 [INFO]   중단: Ctrl+C
+15:23:47 [INFO] =======================================================
+15:23:47 [INFO] =======================================================
+15:23:47 [INFO] 오늘 실행 시간대 안 — 지금 바로 실행
+15:23:47 [INFO]   계정 헬스 모니터 시작
+15:23:47 [INFO]   3.0시간마다 전체 계정 생사 점검
+15:23:47 [INFO]   중단: Ctrl+C
+15:23:47 [INFO] =======================================================
+15:23:47 [INFO] 워밍업 시작 — 대상 7개 계정
+15:23:47 [INFO] 헬스체크 시작 — 대상 7개 계정
+15:23:47 [INFO] 워밍업 시작 — 대상 7개 계정
+15:24:04 [INFO] https://i.instagram.com/api/v1/feed/timeline/
+15:24:04 [INFO] https://i.instagram.com/api/v1/feed/timeline/
+15:24:06 [INFO] https://i.instagram.com/api/v1/feed/timeline/
+15:24:08 [INFO] None [200] POST https://i.instagram.com/api/v1/feed/timeline/ (428.0.0.47.67, Samsung SM-S921N)
+15:24:08 [INFO] None [200] POST https://i.instagram.com/api/v1/feed/timeline/ (428.0.0.47.67, Samsung SM-S901N)
+15:24:08 [INFO] None [200] POST https://i.instagram.com/api/v1/feed/timeline/ (428.0.0.47.67, Samsung SM-S918N)
+15:24:21 [INFO] https://i.instagram.com/api/v1/feed/timeline/
+15:24:26 [INFO] None [200] POST https://i.instagram.com/api/v1/feed/timeline/ (428.0.0.47.67, Samsung SM-S918N)
+15:24:27 [INFO] https://i.instagram.com/api/v1/feed/timeline/
+15:24:27 [INFO] https://i.instagram.com/api/v1/feed/timeline/
+15:24:31 [INFO] None [200] POST https://i.instagram.com/api/v1/feed/timeline/ (428.0.0.47.67, Samsung SM-S928N)
+15:24:31 [INFO] None [200] POST https://i.instagram.com/api/v1/feed/timeline/ (428.0.0.47.67, Samsung SM-S918N)

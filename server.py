@@ -772,19 +772,36 @@ def _start_background_schedulers():
 # ─────────────────────── API: 올인원 패널 ───────────────────────
 
 @app.get("/api/panel/data")
-def api_panel_data():
-    """패널 한 화면에 필요한 모든 데이터 (계정표 + 통계 + 현재행동)"""
+def api_panel_data(sort: str = "created"):
+    """
+    패널 한 화면에 필요한 모든 데이터 (계정표 + 통계 + 현재행동).
+    sort: created(등록순) / slot(유심 슬롯순) / age(계정 나이순, 오래된 순)
+    """
     import activity
     cfg = load_config()
     slots = cfg.get("xproxy", {}).get("slots", [])
     slot_names = {i: s.get("name", f"slot-{i}") for i, s in enumerate(slots)}
     current = activity.current()
 
-    rows = db.connect().execute(
+    rows = [dict(r) for r in db.connect().execute(
         "SELECT username, password, status, proxy_slot, totp_seed, warmup_day, "
-        "health_status, age_class, follower_count, media_count, email "
-        "FROM accounts ORDER BY created_at, username"
-    ).fetchall()
+        "health_status, age_class, follower_count, media_count, email, email_password, "
+        "ig_user_id, created_at "
+        "FROM accounts"
+    ).fetchall()]
+
+    # 정렬
+    if sort == "slot":
+        rows.sort(key=lambda r: (r["proxy_slot"] if r["proxy_slot"] is not None else 999,
+                                 r["created_at"] or ""))
+    elif sort == "age":
+        # user_id 작을수록 오래된 계정 → 오래된 게 앞(#1). user_id 없으면(로그인전) 맨 뒤.
+        def age_key(r):
+            uid = r["ig_user_id"]
+            return (0, int(uid)) if uid and str(uid).isdigit() else (1, r["created_at"] or "")
+        rows.sort(key=age_key)
+    else:
+        rows.sort(key=lambda r: (r["created_at"] or "", r["username"]))
 
     accounts = []
     for i, r in enumerate(rows, 1):
@@ -796,8 +813,12 @@ def api_panel_data():
             "password": r["password"],
             "status": r["status"],
             "slot": r["proxy_slot"],
+            "slot_num": (r["proxy_slot"] + 1) if r["proxy_slot"] is not None else 0,
             "slot_name": slot_names.get(r["proxy_slot"], f"슬롯{r['proxy_slot']}"),
+            "ig_user_id": str(r["ig_user_id"]) if r["ig_user_id"] else "",
             "has_2fa": bool(r["totp_seed"]),
+            "totp_seed": r["totp_seed"] or "",
+            "email_password": r["email_password"] or "",
             "warmup_day": r["warmup_day"],
             "health": r["health_status"] or "",
             "age_class": r["age_class"] or "",
@@ -817,16 +838,22 @@ def api_panel_data():
     }
 
 
-@app.post("/api/account/{username}/set-password")
-def api_set_password(username: str, password: str = Form(...)):
-    """저장된 로그인 비밀번호 수정 (bad_pw 계정 정정용)"""
+@app.post("/api/account/{username}/set-field")
+def api_set_field(username: str, field: str = Form(...), value: str = Form("")):
+    """
+    저장된 계정 필드를 인라인 수정한다 (패널 엑셀 편집용).
+    허용 필드: password / totp_seed / email / email_password
+    """
+    allowed = {"password", "totp_seed", "email", "email_password"}
+    if field not in allowed:
+        raise HTTPException(400, f"수정 불가 필드: {field}")
     acc = db.get_account(username)
     if not acc:
         raise HTTPException(404, "계정 없음")
     with db.tx() as conn:
-        conn.execute("UPDATE accounts SET password=?, updated_at=? WHERE username=?",
-                     (password, db._now(), username))
-    return {"ok": True}
+        conn.execute(f"UPDATE accounts SET {field}=?, updated_at=? WHERE username=?",
+                     (value.strip() or None, db._now(), username))
+    return {"ok": True, "field": field}
 
 
 @app.get("/panel", response_class=HTMLResponse)

@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 CONFIG_PATH = "config.json"
 BASE = Path(__file__).parent
+_SERVE_MODE = False  # python server.py로 직접 실행할 때만 True → 테스트/임포트 시 스케줄러 안 뜸
 
 app = FastAPI(title="인스타몬스터 관리", lifespan=lambda _app: _lifespan(_app))
 templates = Jinja2Templates(directory=str(BASE / "templates"))
@@ -194,6 +195,9 @@ async def _lifespan(_app):
     if stale:
         db.finish_job(stale["id"], "failed", "서버 재시작으로 중단됨")
     logger.info("서버 준비 완료 → http://localhost:8000")
+    # 상시 서버 모드일 때만 워밍업/모니터 스케줄러 백그라운드 기동
+    if _SERVE_MODE:
+        _start_background_schedulers()
     yield
 
 
@@ -757,15 +761,6 @@ def _start_background_schedulers():
     logger.info(
         f"백그라운드 자동화 시작 — 워밍업 매일 {warmup_hours[0]}~{warmup_hours[1]}시 랜덤 / "
         f"모니터 {monitor_interval}시간마다")
-
-
-_SERVE_MODE = False  # python server.py로 직접 실행할 때만 True → 테스트/임포트 시 스케줄러 안 뜸
-
-
-@app.on_event("startup")
-def _on_startup():
-    if _SERVE_MODE:
-        _start_background_schedulers()
 
 
 if __name__ == "__main__":

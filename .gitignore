@@ -42,3 +42,7 @@ order_results.csv
 target_results.csv
 orders.csv
 server_log.txt
+
+_slog.txt
+_shots/
+_shot_*.py

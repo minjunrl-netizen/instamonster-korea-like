@@ -18,6 +18,8 @@ import logging
 
 from instagrapi import Client
 
+import activity
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,6 +69,7 @@ class HumanBehavior:
         실제 사람은 바로 좋아요를 누르지 않고 스크롤을 한다.
         """
         try:
+            activity.emit(self.username, "피드 둘러보기", "", "warmup")
             self.cl.get_timeline_feed("pull_to_refresh")
             self._human_pause(1.0, 3.0)
         except Exception as e:
@@ -105,6 +108,7 @@ class HumanBehavior:
         랜덤으로 스토리를 본다. 좋아요만 하는 단조로운 패턴을 깨준다.
         """
         try:
+            activity.emit(self.username, "스토리 보기", "", "warmup")
             reels = self.cl.get_reels_tray_feed("pull_to_refresh")
             tray = reels.get("tray", []) if isinstance(reels, dict) else []
             if not tray:
@@ -133,6 +137,7 @@ class HumanBehavior:
         tag = random.choice(KOREAN_HASHTAGS)
         try:
             logger.info(f"[{self.username}] 🔍 해시태그 검색: #{tag}")
+            activity.emit(self.username, "해시태그 검색", f"#{tag}", "search")
             self.cl.search_hashtags(tag)  # 검색창에 치는 행동
             self._human_pause(1.5, 3.5)
 
@@ -159,6 +164,7 @@ class HumanBehavior:
         query = random.choice(KOREAN_KEYWORDS + KOREAN_HASHTAGS)
         try:
             logger.info(f"[{self.username}] 🔍 검색: {query}")
+            activity.emit(self.username, "검색 + 프로필 방문", query, "search")
             users = self.cl.search_users(query)
             self._human_pause(1.5, 4.0)
             if not users:
@@ -194,6 +200,7 @@ class HumanBehavior:
         """
         try:
             logger.info(f"[{self.username}] 🎬 탐색 릴스 보기")
+            activity.emit(self.username, "탐색 릴스 시청", "", "warmup")
             reels = self.cl.explore_reels(amount=random.randint(4, 10))
             # 릴스 시청 시간 (여러 개 넘겨봄)
             for _ in range(random.randint(2, 5)):
@@ -207,6 +214,7 @@ class HumanBehavior:
         실제 사람: 팔로잉 목록 보다가 한 명 프로필 들어가기.
         """
         try:
+            activity.emit(self.username, "팔로잉 목록 훑기", "", "warmup")
             uid = str(self.cl.user_id)
             following = self.cl.user_following(uid, amount=random.randint(5, 15))
             self._human_pause(1.5, 4.0)

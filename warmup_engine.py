@@ -189,6 +189,8 @@ class WarmupEngine:
             day = int(acc.get("warmup_day", 1) or 1)
 
             try:
+                import activity
+                activity.emit(username, f"워밍업 시작 (Day{day})", "IP 로테이션 중", "warmup")
                 # IP 로테이션 후 접속
                 self.provider.rotate_ip(slot, wait_seconds=self.rotate_wait)
                 cl = self._open(acc, slot)
@@ -209,9 +211,14 @@ class WarmupEngine:
                 # 일차 진행 / 졸업
                 graduated = result.get("graduated", False) or day >= WarmupStep.GRADUATION_DAY
                 db.advance_warmup(username, graduated=graduated)
+                import activity
+                activity.emit(username, f"워밍업 완료 (Day{day})",
+                              f"활동 {result['activities']}회", "done")
                 if graduated:
                     self.counts["graduated"] += 1
+                    activity.emit(username, "🎓 워밍업 졸업", "실전 투입 가능", "done")
                     self._log("info", f"🎓 [{username}] 워밍업 졸업 → 실전 투입 가능(ready)")
+                activity.clear_account(username)
 
             except Exception as e:
                 self.counts["failed"] += 1

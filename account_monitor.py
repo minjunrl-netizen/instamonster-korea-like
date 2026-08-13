@@ -122,10 +122,15 @@ class AccountMonitor:
 
         def check_slot(slot_accounts):
             for acc in slot_accounts:
+                import activity
+                activity.emit(acc["username"], "생사 점검 중", "", "monitor")
                 health, detail = self.check_one(acc)
                 new_status = HEALTH_TO_STATUS.get(health)
                 db.record_health(acc["username"], health, new_status)
                 summary[health] = summary.get(health, 0) + 1
+                hlabel = {"alive": "정상 ✅"}.get(health, f"{health} ⚠️")
+                activity.emit(acc["username"], "점검 완료", hlabel,
+                              "done" if health == "alive" else "error")
                 if health == "alive":
                     logger.debug(f"  ✅ {acc['username']}: 정상")
                 else:

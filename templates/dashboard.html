@@ -5,6 +5,23 @@
 {% block body %}
 <h1>대시보드</h1>
 
+<!-- ── 실시간 활동 (지금 각 계정이 뭐 하는지) ── -->
+<section class="card live-card">
+  <h2>📡 실시간 활동
+    <span class="dim small" id="liveStatus" style="float:right;font-weight:400">연결 중...</span>
+  </h2>
+  <div class="grid2">
+    <div>
+      <div class="dim small" style="margin-bottom:6px">계정별 현재 행동</div>
+      <div id="liveNow" class="live-now"><div class="dim">대기 중...</div></div>
+    </div>
+    <div>
+      <div class="dim small" style="margin-bottom:6px">활동 스트림 (최신순)</div>
+      <div id="liveFeed" class="live-feed"><div class="dim">활동 대기 중...</div></div>
+    </div>
+  </div>
+</section>
+
 <section class="grid4">
   <div class="card stat">
     <div class="label">전체 계정</div>
@@ -195,6 +212,41 @@
 
 {% block script %}
 <script>
+// ── 실시간 활동 피드 ──
+let _lastActId = 0;
+const KIND_COLOR = { search:'#4f8cff', warmup:'#35c48a', like:'#f0a83c', monitor:'#9a86ff', done:'#35c48a', error:'#f2564d', info:'#8a93a6' };
+function _timeStr(iso){ try { return new Date(iso).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); } catch(e){ return ''; } }
+async function pollActivity() {
+  try {
+    const [rec, cur] = await Promise.all([
+      fetch('/api/activity/recent?since=' + _lastActId).then(r=>r.json()),
+      fetch('/api/activity/current').then(r=>r.json()),
+    ]);
+    document.getElementById('liveStatus').textContent = '🟢 실시간 (' + new Date().toLocaleTimeString('ko-KR') + ')';
+    const now = cur.current || {};
+    const keys = Object.keys(now).sort();
+    const nowEl = document.getElementById('liveNow');
+    if (keys.length) {
+      nowEl.innerHTML = keys.map(u => {
+        const e = now[u]; const c = KIND_COLOR[e.kind] || '#8a93a6';
+        return `<div class="now-row"><b>${u}</b><span class="now-act" style="color:${c}">${e.action}${e.detail?' · '+e.detail:''}</span><span class="dim">${_timeStr(e.time)}</span></div>`;
+      }).join('');
+    } else { nowEl.innerHTML = '<div class="dim">활동 중인 계정 없음</div>'; }
+    if (rec.events && rec.events.length) {
+      _lastActId = rec.last_id;
+      const feed = document.getElementById('liveFeed');
+      if (feed.querySelector('.dim')) feed.innerHTML = '';
+      const rows = rec.events.reverse().map(e => {
+        const c = KIND_COLOR[e.kind] || '#8a93a6';
+        return `<div class="feed-row"><span class="dim">${_timeStr(e.time)}</span> <b>${e.account}</b> <span style="color:${c}">${e.action}</span>${e.detail?' <span class="dim">'+e.detail+'</span>':''}</div>`;
+      }).join('');
+      feed.insertAdjacentHTML('afterbegin', rows);
+      while (feed.children.length > 60) feed.removeChild(feed.lastChild);
+    }
+  } catch(e) { document.getElementById('liveStatus').textContent = '🔴 연결 끊김'; }
+}
+pollActivity();
+setInterval(pollActivity, 1500);
 // ── 헬스 모니터 ──
 const HEALTH_LABEL = {
   alive: '정상', session_expired: '세션만료', challenge: '챌린지',

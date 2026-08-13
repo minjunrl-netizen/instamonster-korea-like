@@ -701,6 +701,74 @@ def api_monitor_status():
     return summary
 
 
+# ─────────────────────── API: 실시간 활동 ───────────────────────
+
+@app.get("/api/activity/recent")
+def api_activity_recent(since: int = 0):
+    """since 이후의 활동 이벤트 (실시간 폴링용)"""
+    import activity
+    return {"events": activity.recent(since), "last_id": activity.last_id()}
+
+
+@app.get("/api/activity/current")
+def api_activity_current():
+    """계정별 현재 행동 (지금 뭐 하는지)"""
+    import activity
+    return {"current": activity.current()}
+
+
+# ─────────────────────── 백그라운드 자동화 (서버가 곧 상시 서비스) ───────────────────────
+
+def _start_background_schedulers():
+    """
+    서버 시작과 함께 워밍업/모니터 스케줄러를 백그라운드 스레드로 띄운다.
+    → START_SERVER.bat 하나만 켜두면 워밍업+모니터+대시보드가 다 돈다.
+    config의 auto.enabled=false면 끈다.
+    """
+    cfg = load_config()
+    auto = cfg.get("auto", {})
+    if not auto.get("enabled", True):
+        logger.info("백그라운드 자동화 비활성 (config auto.enabled=false)")
+        return
+
+    warmup_hours = auto.get("warmup_window", [9, 22])
+    monitor_interval = float(auto.get("monitor_interval_hours", 3))
+
+    def warmup_loop():
+        import warmup_scheduler as ws
+        import sys as _sys
+        _sys.argv = ["warmup_scheduler.py", str(warmup_hours[0]), str(warmup_hours[1])]
+        try:
+            ws.main()
+        except Exception:
+            logger.exception("워밍업 스케줄러 스레드 종료")
+
+    def monitor_loop():
+        import monitor_scheduler as ms
+        import sys as _sys
+        _sys.argv = ["monitor_scheduler.py", str(monitor_interval)]
+        try:
+            ms.main()
+        except Exception:
+            logger.exception("모니터 스케줄러 스레드 종료")
+
+    threading.Thread(target=warmup_loop, daemon=True, name="warmup-sched").start()
+    threading.Thread(target=monitor_loop, daemon=True, name="monitor-sched").start()
+    logger.info(
+        f"백그라운드 자동화 시작 — 워밍업 매일 {warmup_hours[0]}~{warmup_hours[1]}시 랜덤 / "
+        f"모니터 {monitor_interval}시간마다")
+
+
+_SERVE_MODE = False  # python server.py로 직접 실행할 때만 True → 테스트/임포트 시 스케줄러 안 뜸
+
+
+@app.on_event("startup")
+def _on_startup():
+    if _SERVE_MODE:
+        _start_background_schedulers()
+
+
 if __name__ == "__main__":
     import uvicorn
+    _SERVE_MODE = True
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")

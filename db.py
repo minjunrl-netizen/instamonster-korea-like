@@ -463,6 +463,32 @@ def monitorable_accounts() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def health_summary() -> dict:
+    """헬스체크 현황 요약 (대시보드용)"""
+    rows = connect().execute(
+        "SELECT username, status, health_status, last_health_check "
+        "FROM accounts WHERE session_file IS NOT NULL ORDER BY last_health_check DESC"
+    ).fetchall()
+    by_health: dict[str, int] = {}
+    last_check = None
+    attention = []
+    for r in rows:
+        h = r["health_status"] or "미점검"
+        by_health[h] = by_health.get(h, 0) + 1
+        if r["last_health_check"] and (last_check is None or r["last_health_check"] > last_check):
+            last_check = r["last_health_check"]
+        if h in ("banned", "not_exist", "challenge", "session_expired"):
+            attention.append({"username": r["username"], "health": h,
+                              "status": r["status"]})
+    return {
+        "total": len(rows),
+        "alive": by_health.get("alive", 0),
+        "by_health": by_health,
+        "last_check": last_check,
+        "attention": attention,
+    }
+
+
 def bump_likes(username: str, n: int = 1) -> None:
     """일일 카운터는 날짜가 바뀌면 자동 리셋된다"""
     today = date.today().isoformat()

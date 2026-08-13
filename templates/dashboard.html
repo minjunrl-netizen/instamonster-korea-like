@@ -113,11 +113,44 @@
         <li>Day 1~3: 읽기만 (피드/스토리)</li>
         <li>Day 4~: 3~5일에 1개 자동 포스팅 (사진/앨범/릴스 랜덤)</li>
         <li>업로드 전 EXIF 제거 + 미세 변형 (계정 기종 맞춤)</li>
-        <li>Day 21: 졸업 → 실전 투입(ready)</li>
+        <li>Day 14: 졸업 → 실전 투입(ready)</li>
       </ul>
       <p class="dim small" style="margin:6px 0 0">
         콘텐츠는 <code>content/계정아이디/</code> 폴더에 넣어두면 자동으로 뽑아 올림.
       </p>
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>❤️ 계정 헬스 <span class="dim">3시간마다 생사 점검</span>
+    <span id="monLastCheck" class="dim small" style="float:right;font-weight:400"></span>
+  </h2>
+  <div class="grid2">
+    <div>
+      <div class="health-stat">
+        <div class="hbig" id="hAlive">{{ health.alive }}</div>
+        <div class="dim">/ {{ health.total }} 정상</div>
+      </div>
+      <button class="btn primary" id="monBtn" onclick="runMonitor()">지금 점검</button>
+      <button class="btn sm" onclick="refreshMonitor()">새로고침</button>
+      <div id="monResult" class="result"></div>
+    </div>
+    <div>
+      <div id="monAttention">
+        {% if health.attention %}
+        <div class="warn-box" style="margin:0">
+          <b class="err-text">🚨 대응 필요 {{ health.attention|length }}개</b>
+          <ul>
+            {% for a in health.attention %}
+            <li><a href="/account/{{ a.username }}">{{ a.username }}</a> — {{ a.health }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+        {% else %}
+        <div class="ok-box">✅ 전부 정상 — 대응 필요 계정 없음</div>
+        {% endif %}
+      </div>
     </div>
   </div>
 </section>
@@ -162,6 +195,59 @@
 
 {% block script %}
 <script>
+// ── 헬스 모니터 ──
+const HEALTH_LABEL = {
+  alive: '정상', session_expired: '세션만료', challenge: '챌린지',
+  banned: '밴', not_exist: '삭제됨', rate_limit: '레이트리밋',
+  error: '오류', '미점검': '미점검',
+};
+
+async function refreshMonitor() {
+  try {
+    const r = await fetch('/api/monitor/status');
+    const d = await r.json();
+    document.getElementById('hAlive').textContent = d.alive;
+    // 마지막 점검 시각
+    const lc = d.last_check ? new Date(d.last_check).toLocaleString('ko-KR', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '점검 전';
+    document.getElementById('monLastCheck').textContent = '마지막 점검: ' + lc + (d.running ? ' · 점검중...' : '');
+    // 대응 필요 목록
+    const box = document.getElementById('monAttention');
+    if (d.attention && d.attention.length) {
+      box.innerHTML = '<div class="warn-box" style="margin:0"><b class="err-text">🚨 대응 필요 ' +
+        d.attention.length + '개</b><ul>' +
+        d.attention.map(a => `<li><a href="/account/${a.username}">${a.username}</a> — ${HEALTH_LABEL[a.health]||a.health}</li>`).join('') +
+        '</ul></div>';
+    } else {
+      box.innerHTML = '<div class="ok-box">✅ 전부 정상 — 대응 필요 계정 없음</div>';
+    }
+  } catch (e) {}
+}
+
+async function runMonitor() {
+  const box = document.getElementById('monResult');
+  const btn = document.getElementById('monBtn');
+  box.className = 'result loading'; box.textContent = '점검 중... (계정당 몇 초)';
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/monitor/run', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || '점검 실패');
+    box.className = 'result ok'; box.textContent = '점검 시작됨 — 결과는 곧 갱신됩니다';
+    // 점검 진행 중 주기적으로 새로고침
+    let ticks = 0;
+    const timer = setInterval(async () => {
+      await refreshMonitor(); ticks++;
+      const st = await (await fetch('/api/monitor/status')).json();
+      if (!st.running || ticks > 60) { clearInterval(timer); btn.disabled = false; box.textContent = '점검 완료'; }
+    }, 3000);
+  } catch (e) {
+    box.className = 'result err'; box.textContent = e.message; btn.disabled = false;
+  }
+}
+
+// 대시보드 열면 헬스 현황 30초마다 자동 갱신
+refreshMonitor();
+setInterval(refreshMonitor, 30000);
 async function startWarmup() {
   const box = document.getElementById('warmupResult');
   const btn = document.getElementById('warmupBtn');

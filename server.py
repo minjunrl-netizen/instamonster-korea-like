@@ -234,6 +234,7 @@ def page_dashboard(request: Request):
         "jobs": db.recent_jobs(10),
         "warming_count": db.stats().get("by_status", {}).get("warming", 0),
         "warming_due": len(db.warming_accounts(due_only=True)),
+        "health": db.health_summary(),
     })
 
 
@@ -644,6 +645,61 @@ def api_warmup_status():
             for a in warming
         ],
     }
+
+
+# ─────────────────────── API: 헬스 모니터 ───────────────────────
+
+class MonitorRunner:
+    """헬스체크를 백그라운드로 (동시 1개)"""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.thread: threading.Thread | None = None
+
+    @property
+    def busy(self) -> bool:
+        return self.thread is not None and self.thread.is_alive()
+
+    def start(self) -> int:
+        with self.lock:
+            if self.busy:
+                raise HTTPException(409, "헬스체크가 이미 실행 중이다")
+            targets = db.monitorable_accounts()
+            if not targets:
+                raise HTTPException(400, "점검할 계정이 없다 (세션 있는 계정 없음)")
+            job_id = db.create_job("health_check", total=len(targets))
+
+            def work():
+                try:
+                    from account_monitor import run_health_check
+                    r = run_health_check(job_id=job_id)
+                    db.finish_job(job_id, "done",
+                                  f"정상 {r['alive']} / 대응필요 {len(r.get('dead_list', []))}")
+                except Exception as e:
+                    logger.exception("헬스체크 실패")
+                    db.finish_job(job_id, "failed", str(e))
+
+            self.thread = threading.Thread(target=work, daemon=True, name="monitor")
+            self.thread.start()
+            return job_id
+
+
+monitor_runner = MonitorRunner()
+
+
+@app.post("/api/monitor/run")
+def api_monitor_run():
+    """지금 즉시 전체 계정 헬스체크"""
+    return {"job_id": monitor_runner.start()}
+
+
+@app.get("/api/monitor/status")
+def api_monitor_status():
+    """헬스 현황 요약 (대시보드 실시간)"""
+    summary = db.health_summary()
+    summary["running"] = monitor_runner.busy
+    return summary
+
 
 if __name__ == "__main__":
     import uvicorn
